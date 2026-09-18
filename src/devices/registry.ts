@@ -45,34 +45,45 @@ export const LD2420: DeviceDescriptor = {
   defaultBaudRate: 115200,
   supportedBaudRates: [9600, 19200, 38400, 57600, 115200, 230400, 256000, 460800],
   portFilters: HILINK_BRIDGES,
-  capabilities: ['monitor', 'configure', 'firmware', 'trace'],
+  capabilities: ['monitor', 'calibrate', 'configure', 'firmware', 'trace'],
   firmware: LD2420_FIRMWARE,
   implemented: true,
 }
 
 /**
- * A module this tool knows nothing about beyond the shared frame envelope.
+ * Whatever is on the other end of the wire.
  *
- * It exists so the generic flasher has somewhere to live that is not another
- * device's folder, and so the unverified path is something you have to select
- * rather than something sitting beside the supported one. No monitoring or
- * configuration: those need per-device knowledge this entry does not have.
+ * No driver, so nothing here decodes: the serial monitor shows the bytes as
+ * they arrive and sends what you type, which is what you actually need when the
+ * question is whether the device is talking at all and at what bit rate. The
+ * flash panel is the same transfer as the LD2420's, driven by a descriptor you
+ * write — so a module this project has never seen is reachable without a code
+ * change.
+ *
+ * Deliberately not tied to a vendor: the serial monitor works against anything,
+ * and the flash descriptor defaults to the Hi-Link shape only because that is
+ * the sequence that exists.
  */
-export const GENERIC_HILINK: DeviceDescriptor = {
-  id: 'hilink-generic',
-  name: 'Generic Hi-Link LD',
-  vendor: 'Hi-Link',
+export const GENERIC_SERIAL: DeviceDescriptor = {
+  id: 'generic-serial',
+  name: 'Any serial device',
+  vendor: 'Unknown',
   summary:
-    'Any other LD-family module, for firmware transfer only. The command set is unverified outside the LD2420.',
+    'No driver, no assumptions. Listen to the raw stream, send bytes, and flash with a descriptor you supply.',
   defaultBaudRate: 115200,
-  supportedBaudRates: [9600, 19200, 38400, 57600, 115200, 230400, 256000, 460800],
-  portFilters: HILINK_BRIDGES,
-  capabilities: ['flash', 'trace'],
+  // Every rate the picker offers: with an unknown device, finding the right one
+  // is half the job.
+  supportedBaudRates: [
+    1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 256000, 460800, 921600,
+  ],
+  // No vendor filter: the point is to reach whatever is plugged in.
+  portFilters: [],
+  capabilities: ['terminal', 'flash'],
   firmware: GENERIC_HILINK_FIRMWARE,
   implemented: true,
 }
 
-export const DEVICES: DeviceDescriptor[] = [LD2420, GENERIC_HILINK]
+export const DEVICES: DeviceDescriptor[] = [LD2420, GENERIC_SERIAL]
 
 export function findDevice(id: string): DeviceDescriptor | undefined {
   return DEVICES.find((device) => device.id === id)

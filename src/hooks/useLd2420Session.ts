@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MeasurementHistory } from '../core/history'
+import { RawSerialLog } from '../core/rawLog'
 import { isWebSerialSupported, type Transport } from '../core/transport'
 import { WebSerialTransport } from '../core/webserial'
 import { deviceCan, LD2420, type DeviceDescriptor } from '../devices/registry'
@@ -65,6 +66,13 @@ let noticeId = 0
 
 export function useLd2420Session() {
   const historyRef = useRef(new MeasurementHistory(3000))
+  /**
+   * The unframed stream, tapped straight off the transport. Kept beside the
+   * decoded history rather than derived from it: when you do not know what is
+   * on the wire, the decoder's assumptions are what hide the answer.
+   */
+  const rawRef = useRef(new RawSerialLog())
+  const openedAtRef = useRef(0)
   /** Latest state, readable from callbacks without adding it as a dependency. */
   const stateRef = useRef<SessionState | null>(null)
   const driverRef = useRef<Ld2420Driver | null>(null)
@@ -124,6 +132,10 @@ export function useLd2420Session() {
       transportRef.current = transport
       driver.attach()
 
+      openedAtRef.current = performance.now()
+      transport.onData((chunk) =>
+        rawRef.current.push('rx', chunk, performance.now() - openedAtRef.current),
+      )
       driver.onMeasurement((measurement) => historyRef.current.push(measurement))
       driver.onTrace(() => setState((p) => ({ ...p, traceVersion: p.traceVersion + 1 })))
       driver.onIdentity((identity) => patch({ identity }))
@@ -186,6 +198,7 @@ export function useLd2420Session() {
       try {
         const transport = await WebSerialTransport.request(device.portFilters)
         historyRef.current.clear()
+        rawRef.current.clear()
         await transport.open(baudRate)
         await attach(transport, device)
       } catch (error) {
@@ -335,6 +348,28 @@ export function useLd2420Session() {
     [patch, run],
   )
 
+  /**
+   * Write bytes with no framing and no queueing, for talking to something the
+   * tool has no driver for. Recorded in the raw log so the exchange reads back
+   * in order.
+   */
+  const sendRaw = useCallback(
+    async (bytes: Uint8Array) => {
+      const transport = transportRef.current
+      if (!transport) {
+        notify('error', 'No device connected.')
+        return
+      }
+      try {
+        await transport.write(bytes)
+        rawRef.current.push('tx', bytes, performance.now() - openedAtRef.current)
+      } catch (error) {
+        notify('error', `Could not send: ${describe(error)}`)
+      }
+    },
+    [notify],
+  )
+
   const readFirmwareInfo = useCallback(async () => {
     const info = await run('Reading firmware information', (driver) => driver.readFirmwareInfo())
     if (info) patch({ firmwareInfo: info })
@@ -421,6 +456,8 @@ export function useLd2420Session() {
       uploadFirmware,
       dismissNotice,
       notify,
+      sendRaw,
+      clearRaw: () => rawRef.current.clear(),
       clearTrace: () => {
         driverRef.current?.clearTrace()
         setState((p) => ({ ...p, traceVersion: p.traceVersion + 1 }))
@@ -439,13 +476,14 @@ export function useLd2420Session() {
       reloadConfig,
       resetToFactory,
       revertDraft,
+      sendRaw,
       setDraft,
       setMode,
       uploadFirmware,
     ],
   )
 
-  return { state, actions, history: historyRef.current, trace }
+  return { state, actions, history: historyRef.current, raw: rawRef.current, trace }
 }
 
 function describe(error: unknown): string {

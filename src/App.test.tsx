@@ -7,7 +7,7 @@
  * here rather than in front of the person holding the sensor.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import { factoryConfig } from './devices/ld2420/config'
@@ -200,13 +200,15 @@ describe('App', () => {
     expect(screen.getByRole('tab', { name: 'Monitor' })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Generic flash' })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /Generic Hi-Link LD/ }))
+    await user.click(screen.getByRole('button', { name: /Any serial device/ }))
 
-    // The generic entry can only be flashed, so the rest is gone.
-    expect(await screen.findByRole('tab', { name: 'Generic flash' })).toBeInTheDocument()
+    // The generic entry has no driver, so it listens and flashes and nothing else.
+    expect(await screen.findByRole('tab', { name: 'Serial monitor' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Generic flash' })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Monitor' })).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Configuration' })).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Serial trace' })).toBeInTheDocument()
+    // A decoded frame trace assumes a framing this entry cannot assume.
+    expect(screen.queryByRole('tab', { name: 'Serial trace' })).not.toBeInTheDocument()
   })
 
   it('keeps the generic flasher behind its own extra acknowledgement', async () => {
@@ -214,7 +216,7 @@ describe('App', () => {
     render(<App />)
     await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
     await screen.findByText('v1.6.1')
-    await user.click(screen.getByRole('button', { name: /Generic Hi-Link LD/ }))
+    await user.click(screen.getByRole('button', { name: /Any serial device/ }))
     await user.click(await screen.findByRole('tab', { name: 'Generic flash' }))
 
     expect(await screen.findByText('unverified descriptor')).toBeInTheDocument()
@@ -236,7 +238,7 @@ describe('App', () => {
     render(<App />)
     await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
     await screen.findByText('v1.6.1')
-    await user.click(screen.getByRole('button', { name: /Generic Hi-Link LD/ }))
+    await user.click(screen.getByRole('button', { name: /Any serial device/ }))
     await user.click(await screen.findByRole('tab', { name: 'Generic flash' }))
 
     // Two commands on the same byte: replies could not be told apart.
@@ -250,6 +252,67 @@ describe('App', () => {
       screen.queryByRole('button', { name: 'Write firmware to module' }),
     ).not.toBeInTheDocument()
   }, 20_000)
+
+  it('listens to the raw stream and sends bytes back', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
+    await screen.findByText('v1.6.1')
+    await user.click(screen.getByRole('button', { name: /Any serial device/ }))
+    await user.click(await screen.findByRole('tab', { name: 'Serial monitor' }))
+
+    // The simulated module streams ASCII, which the monitor shows undecoded.
+    await waitFor(
+      () => {
+        expect(screen.getByText(/B received/)).not.toHaveTextContent('0 B received')
+      },
+      { timeout: 4000 },
+    )
+
+    // Hex mode reformats the same bytes.
+    await user.click(screen.getByRole('radio', { name: 'Hex' }))
+    // Testing Library collapses runs of whitespace, so match loosely.
+    expect(await screen.findByText(/000000\s+[0-9a-f]{2}\s/)).toBeInTheDocument()
+
+    // Sending is raw: what is typed goes out, plus the chosen line ending.
+    await user.click(screen.getByRole('radio', { name: 'ASCII' }))
+    const send = screen.getByLabelText('Send')
+    await user.type(send, 'hello{Enter}')
+    await waitFor(() => {
+      expect(screen.getByText(/B sent/)).not.toHaveTextContent('0 B sent')
+    })
+  }, 20_000)
+
+  it('walks through the presence assistant and hands the result to the form', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    try {
+      render(<App />)
+      await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
+      await screen.findByText('v1.6.1')
+      await user.click(screen.getByRole('tab', { name: 'Presence setup' }))
+
+      // Nothing to propose until the empty area has been measured.
+      expect(await screen.findByText(/Record the empty area first/)).toBeInTheDocument()
+
+      const [recordBaseline] = screen.getAllByRole('button', { name: /Record 20 s/ })
+      await user.click(recordBaseline!)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(21_000)
+      })
+
+      // With a baseline there is a proposal, flagged as unverified.
+      expect(await screen.findByText(/nothing checks that these thresholds/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Load into the configuration form/ })).toBeEnabled()
+
+      await user.click(screen.getByRole('button', { name: /Load into the configuration form/ }))
+
+      // It lands in the configuration form, unwritten.
+      expect(await screen.findByText('Unwritten changes')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  }, 30_000)
 
   it('exposes the serial trace', async () => {
     const user = userEvent.setup()

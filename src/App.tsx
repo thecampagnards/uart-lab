@@ -24,18 +24,30 @@ import { DeviceList } from './ui/components/DeviceList'
 import { FirmwarePanel } from './ui/components/FirmwarePanel'
 import { GenericFlashPanel } from './ui/components/GenericFlashPanel'
 import { LivePanel } from './ui/components/LivePanel'
+import { PresenceAssistant } from './ui/components/PresenceAssistant'
+import { TerminalPanel } from './ui/components/TerminalPanel'
 import { TracePanel } from './ui/components/TracePanel'
 
 const TAB_LABELS: Record<DeviceCapability, string> = {
   monitor: 'Monitor',
+  calibrate: 'Presence setup',
   configure: 'Configuration',
   firmware: 'Firmware',
   flash: 'Generic flash',
+  terminal: 'Serial monitor',
   trace: 'Serial trace',
 }
 
 /** Tab order, independent of how a device happens to list its capabilities. */
-const TAB_ORDER: DeviceCapability[] = ['monitor', 'configure', 'firmware', 'flash', 'trace']
+const TAB_ORDER: DeviceCapability[] = [
+  'monitor',
+  'terminal',
+  'calibrate',
+  'configure',
+  'firmware',
+  'flash',
+  'trace',
+]
 
 export default function App() {
   return (
@@ -48,7 +60,7 @@ export default function App() {
 function Shell() {
   const [selectedId, setSelectedId] = useState(LD2420.id)
   const [navOpened, nav] = useDisclosure(false)
-  const { state, actions, history, trace } = useLd2420Session()
+  const { state, actions, history, raw, trace } = useLd2420Session()
 
   const device: DeviceDescriptor = findDevice(selectedId) ?? LD2420
   const tabs = useMemo(
@@ -145,6 +157,40 @@ function Shell() {
                     config={state.deviceConfig ?? state.draftConfig}
                     onSetMode={(mode: OperatingModeValue) => void actions.setMode(mode)}
                   />
+                </Stack>
+              </Tabs.Panel>
+            ) : null}
+
+            {deviceCan(device, 'terminal') ? (
+              <Tabs.Panel value="terminal" pt="md">
+                <TerminalPanel
+                  log={raw}
+                  connected={connected}
+                  onSend={(bytes) => void actions.sendRaw(bytes)}
+                  onClear={actions.clearRaw}
+                />
+              </Tabs.Panel>
+            ) : null}
+
+            {deviceCan(device, 'calibrate') ? (
+              <Tabs.Panel value="calibrate" pt="md">
+                <Stack gap="md">
+                  {connected ? (
+                    <PresenceAssistant
+                      state={state}
+                      history={history}
+                      onApply={(config) => {
+                        actions.setDraft(() => config)
+                        setTab('configure')
+                      }}
+                      onSetReportMode={() => void actions.setMode(OperatingMode.Report)}
+                    />
+                  ) : (
+                    <Alert variant="light">
+                      Connect a module — or start the simulated demo — to measure the area and work
+                      out its thresholds.
+                    </Alert>
+                  )}
                 </Stack>
               </Tabs.Panel>
             ) : null}

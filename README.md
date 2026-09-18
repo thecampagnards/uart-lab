@@ -7,7 +7,7 @@ driver or application to install, built on the
 First supported device: the **Hi-Link HLK-LD2420**, a 24 GHz mmWave human
 presence radar.
 
-> **Live demo** — <https://REPLACE-WITH-YOUR-ACCOUNT.github.io/uart-lab/>
+> **Live demo** — <https://thecampagnards.github.io/uart-lab/>
 > It ships with a simulated LD2420, so the whole interface can be explored
 > without hardware.
 
@@ -17,6 +17,12 @@ presence radar.
   CH340…), at any rate from 9600 to 460800 baud.
 - **Live monitoring**: presence, distance, per-gate energy for all 16 gates, a
   distance timeline and a time × gate heatmap.
+- **Presence setup**: records the area empty, then occupied, and works out
+  thresholds that sit between the two — and tells you which gates a person
+  actually crossed.
+- **Serial monitor**: the raw stream in text or hex, both directions, with
+  nothing decoded — for working out whether a device is talking at all, and at
+  what bit rate.
 - **Configuration**: minimum and maximum gate, absence delay, and all 32
   thresholds (motion and still) — shown both raw and in dB.
 - **Import/export** of the configuration as JSON — as a file, or read and pasted
@@ -25,8 +31,7 @@ presence radar.
   validated first and progress reported block by block.
 - **Generic flashing**: a second device entry drives the same transfer against a
   descriptor you write — command bytes, block and flash sizes, status values —
-  so a Hi-Link LD module this project has never seen can be reached without a
-  code change.
+  so a module this project has never seen can be reached without a code change.
 - **Serial trace** in hex, to cross-check against the protocol documentation.
 - **Built-in simulated module**, to try the tool out or develop without a sensor.
 
@@ -89,8 +94,9 @@ Built with [Vite](https://vite.dev), [React](https://react.dev),
 either, which is what keeps the protocol layer testable in plain Node.
 
 Devices declare what they can do, and the shell turns that into tabs: the
-LD2420 offers monitoring, configuration, firmware and the trace; the generic
-Hi-Link entry only flashing and the trace. The details, and how to add a device,
+LD2420 offers monitoring, presence setup, configuration, firmware and the frame
+trace; **Any serial device** — which has no driver at all — offers the raw
+serial monitor and generic flashing. The details, and how to add a device,
 are in [`doc/architecture.md`](doc/architecture.md).
 
 ## About the protocol

@@ -78,13 +78,40 @@ are right is not something software can tell you.
 ## Devices declare what they can do
 
 Each registry entry lists `capabilities`, and the shell turns those into tabs.
-The LD2420 has `monitor`, `configure`, `firmware` and `trace`; the generic
-Hi-Link entry has only `flash` and `trace`, so it never shows a configuration
-form it could not fill, and connecting to it skips the configuration read and
-the report-mode switch that would only produce meaningless errors.
+The LD2420 has `monitor`, `calibrate`, `configure`, `firmware` and `trace`. The
+**Any serial device** entry has `terminal` and `flash` and nothing else: with no
+driver there is nothing to decode, so it never shows a configuration form it
+could not fill, no frame trace whose framing it cannot assume, and connecting to
+it skips the identity probe and the report-mode switch that would only produce
+meaningless errors.
 
-That is also where the generic flasher lives: it is a device you select, not a
-tab that sits permanently beside the supported path.
+That is where both driver-free features live. It is a device you select, not a
+pair of tabs sitting permanently beside the supported path.
+
+## Two views of the same bytes
+
+`Ld2420FrameReader` decodes: it assumes a framing and drops what does not fit.
+`RawSerialLog` does not: it keeps the bytes as they arrived, both directions,
+and the serial monitor renders them as terminal-style lines or as a hex dump.
+
+The distinction matters more than it looks. When the question is "is this thing
+talking at all, and at what bit rate", a decoder answers with silence whether
+the device is mute or merely misunderstood. The raw log is the only view that
+can tell those apart, which is why it is tapped straight off the transport
+rather than derived from anything the driver produced.
+
+## Threshold setting is measured, not guessed
+
+`src/devices/ld2420/calibration.ts` is pure: frames in, per-gate peak and mean
+out, then a proposed configuration. The multipliers reproduce ESPHome's
+`auto_calibrate_sensitivity` at its default setting, so numbers worked out there
+carry over.
+
+What is added is the second recording. ESPHome measures the quiet room and
+places thresholds above its peak; that gives a threshold but no evidence it can
+be crossed. Recording the occupied area too turns the proposal into something
+checkable — which gates a person actually crossed, which ones sit inside the
+range and never fired — and that is what the assistant reports.
 
 ## Adding a device
 
