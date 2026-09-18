@@ -1,11 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 410" width="720" height="410" role="img" aria-label="Wiring between an FT232RL USB-UART bridge and an HLK-LD2420 module: 3V3 to 3V3, GND to GND, the bridge's TXD to the module's RX carrying commands, and the module's OT1 back to the bridge's RXD carrying measurements. OT2 is left unconnected. The bridge must be set to 3.3 volts.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 500" width="760" height="500" role="img" aria-label="Wiring between an FT232RL USB-UART bridge and an HLK-LD2420 module. Of the bridge's header, only four pins are used: 3V3 to the module's 3V3, GND to GND, the bridge's TXD to the module's RX carrying commands, and the module's OT1 back to the bridge's RXD carrying measurements. The 5V pin must never be connected. RTS, CTS, DTR, DSR, DCD and RI are unused, and the module's OT2 is left unconnected.">
   <style>
+    svg {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    /* standalone-theme:start
+       Colours for when this file is viewed on its own — in a README, an editor,
+       a browser tab. They follow the operating system. The app strips this block
+       when it inlines the file and supplies the same variables from its own
+       theme instead, so the diagram follows the in-app light/dark toggle rather
+       than the OS. Keep the two sets of names in sync. */
     svg {
       color: #3f3f3f;
       --power: #c62f2f;
       --data: #1f6fd0;
       --muted: #7a7a7a;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
     @media (prefers-color-scheme: dark) {
       svg {
@@ -15,11 +23,16 @@
         --muted: #9a9a9a;
       }
     }
+    /* standalone-theme:end */
     .chip { fill: none; stroke: currentColor; stroke-width: 1.5; }
     .pin { fill: currentColor; }
+    .pin-off { fill: var(--muted); }
+    .pin-danger { fill: var(--power); }
     .title { fill: currentColor; font-size: 14px; font-weight: 650; }
     .sub { fill: var(--muted); font-size: 11px; }
     .pinlabel { fill: currentColor; font-size: 12.5px; }
+    .pinlabel-off { fill: var(--muted); font-size: 12.5px; }
+    .pinlabel-danger { fill: var(--power); font-size: 12.5px; font-weight: 650; }
     .wirelabel { font-size: 11.5px; }
     .wire { stroke-width: 2; fill: none; }
   </style>
@@ -30,56 +43,87 @@
     </marker>
   </defs>
 
-  <!-- USB-UART bridge -->
-  <rect class="chip" x="40" y="60" width="180" height="250" rx="10"/>
-  <text class="title" x="40" y="46">FT232RL bridge</text>
-  <text class="sub" x="40" y="330">USB side — your computer</text>
+  <!-- ===================== USB-UART bridge ===================== -->
+  <rect class="chip" x="40" y="56" width="210" height="348" rx="10"/>
+  <text class="title" x="40" y="42">FT232RL bridge</text>
+  <text class="sub" x="40" y="424">Full breakout header. Only four pins are used;</text>
+  <text class="sub" x="40" y="440">the greyed ones stay unconnected.</text>
 
-  <rect class="pin" x="214" y="105" width="12" height="10" rx="2"/>
-  <text class="pinlabel" x="204" y="114" text-anchor="end">VCC</text>
-  <rect class="pin" x="214" y="150" width="12" height="10" rx="2"/>
-  <text class="pinlabel" x="204" y="159" text-anchor="end">GND</text>
-  <rect class="pin" x="214" y="195" width="12" height="10" rx="2"/>
-  <text class="pinlabel" x="204" y="204" text-anchor="end">TXD</text>
-  <rect class="pin" x="214" y="240" width="12" height="10" rx="2"/>
-  <text class="pinlabel" x="204" y="249" text-anchor="end">RXD</text>
+  <!-- 5V: the pin that destroys the module -->
+  <rect class="pin-danger" x="244" y="81" width="12" height="10" rx="2"/>
+  <text class="pinlabel-danger" x="234" y="90" text-anchor="end">5V</text>
+  <text class="sub" x="264" y="90" fill="var(--power)">never connect this to the module</text>
 
-  <!-- Radar module -->
-  <rect class="chip" x="500" y="60" width="180" height="250" rx="10"/>
-  <text class="title" x="680" y="46" text-anchor="end">HLK-LD2420</text>
-  <text class="sub" x="680" y="330" text-anchor="end">connector J2 — 3.3 V only</text>
+  <rect class="pin" x="244" y="111" width="12" height="10" rx="2"/>
+  <text class="pinlabel" x="234" y="120" text-anchor="end">3V3</text>
 
-  <rect class="pin" x="494" y="105" width="12" height="10" rx="2"/>
-  <text class="pinlabel" x="516" y="114">3V3</text>
-  <rect class="pin" x="494" y="150" width="12" height="10" rx="2"/>
-  <text class="pinlabel" x="516" y="159">GND</text>
-  <rect class="pin" x="494" y="195" width="12" height="10" rx="2"/>
-  <text class="pinlabel" x="516" y="204">RX</text>
-  <rect class="pin" x="494" y="240" width="12" height="10" rx="2"/>
-  <text class="pinlabel" x="516" y="249">OT1</text>
-  <rect class="pin" x="494" y="285" width="12" height="10" rx="2"/>
-  <text class="pinlabel" x="516" y="294">OT2</text>
+  <rect class="pin" x="244" y="141" width="12" height="10" rx="2"/>
+  <text class="pinlabel" x="234" y="150" text-anchor="end">GND</text>
 
-  <!-- Power and ground: shared, no direction -->
-  <line class="wire" x1="226" y1="110" x2="494" y2="110" stroke="var(--power)"/>
-  <text class="wirelabel" x="360" y="100" text-anchor="middle" fill="var(--power)">3.3 V supply</text>
+  <rect class="pin" x="244" y="171" width="12" height="10" rx="2"/>
+  <text class="pinlabel" x="234" y="180" text-anchor="end">TXD</text>
 
-  <line class="wire" x1="226" y1="155" x2="494" y2="155" stroke="currentColor"/>
-  <text class="wirelabel" x="360" y="145" text-anchor="middle" fill="currentColor">common ground</text>
+  <rect class="pin" x="244" y="201" width="12" height="10" rx="2"/>
+  <text class="pinlabel" x="234" y="210" text-anchor="end">RXD</text>
 
-  <!-- Data: two one-way wires, which is the part people get wrong -->
-  <line class="wire" x1="226" y1="200" x2="490" y2="200" stroke="var(--data)" marker-end="url(#arrow-data)"/>
-  <text class="wirelabel" x="360" y="190" text-anchor="middle" fill="var(--data)">commands from the browser</text>
+  <rect class="pin-off" x="244" y="241" width="12" height="10" rx="2"/>
+  <text class="pinlabel-off" x="234" y="250" text-anchor="end">RTS</text>
 
-  <line class="wire" x1="494" y1="245" x2="230" y2="245" stroke="var(--data)" marker-end="url(#arrow-data)"/>
-  <text class="wirelabel" x="360" y="235" text-anchor="middle" fill="var(--data)">measurements from the module</text>
+  <rect class="pin-off" x="244" y="271" width="12" height="10" rx="2"/>
+  <text class="pinlabel-off" x="234" y="280" text-anchor="end">CTS</text>
 
-  <!-- OT2 is optional -->
-  <line class="wire" x1="494" y1="290" x2="420" y2="290" stroke="var(--muted)" stroke-dasharray="4 4"/>
-  <text class="sub" x="410" y="294" text-anchor="end">optional presence output</text>
+  <rect class="pin-off" x="244" y="301" width="12" height="10" rx="2"/>
+  <text class="pinlabel-off" x="234" y="310" text-anchor="end">DTR</text>
 
-  <!-- The mistake that destroys the module -->
-  <rect x="40" y="344" width="640" height="52" rx="8" fill="none" stroke="var(--power)" stroke-width="1.5"/>
-  <text class="pinlabel" x="60" y="366" fill="var(--power)" font-weight="650">Set the bridge to 3.3 V before wiring.</text>
-  <text class="sub" x="60" y="384" fill="var(--power)">Many FT232RL boards ship jumpered to 5 V, which destroys the module.</text>
+  <rect class="pin-off" x="244" y="331" width="12" height="10" rx="2"/>
+  <text class="pinlabel-off" x="234" y="340" text-anchor="end">DSR</text>
+
+  <rect class="pin-off" x="244" y="361" width="12" height="10" rx="2"/>
+  <text class="pinlabel-off" x="234" y="370" text-anchor="end">DCD</text>
+
+  <rect class="pin-off" x="244" y="386" width="12" height="10" rx="2"/>
+  <text class="pinlabel-off" x="234" y="395" text-anchor="end">RI</text>
+
+  <text class="sub" x="60" y="236">flow control and modem lines — unused</text>
+
+  <!-- ===================== Radar module ===================== -->
+  <rect class="chip" x="520" y="56" width="200" height="230" rx="10"/>
+  <text class="title" x="720" y="42" text-anchor="end">HLK-LD2420</text>
+  <text class="sub" x="720" y="306" text-anchor="end">connector J2 — 3.3 V part throughout</text>
+
+  <rect class="pin" x="514" y="111" width="12" height="10" rx="2"/>
+  <text class="pinlabel" x="536" y="120">3V3</text>
+
+  <rect class="pin" x="514" y="141" width="12" height="10" rx="2"/>
+  <text class="pinlabel" x="536" y="150">GND</text>
+
+  <rect class="pin" x="514" y="171" width="12" height="10" rx="2"/>
+  <text class="pinlabel" x="536" y="180">RX</text>
+
+  <rect class="pin" x="514" y="201" width="12" height="10" rx="2"/>
+  <text class="pinlabel" x="536" y="210">OT1</text>
+
+  <rect class="pin-off" x="514" y="256" width="12" height="10" rx="2"/>
+  <text class="pinlabel-off" x="536" y="265">OT2</text>
+
+  <!-- ===================== Wires ===================== -->
+  <line class="wire" x1="256" y1="116" x2="514" y2="116" stroke="var(--power)"/>
+  <text class="wirelabel" x="385" y="108" text-anchor="middle" fill="var(--power)">3.3 V supply</text>
+
+  <line class="wire" x1="256" y1="146" x2="514" y2="146" stroke="currentColor"/>
+  <text class="wirelabel" x="385" y="138" text-anchor="middle" fill="currentColor">common ground</text>
+
+  <line class="wire" x1="256" y1="176" x2="510" y2="176" stroke="var(--data)" marker-end="url(#arrow-data)"/>
+  <text class="wirelabel" x="385" y="168" text-anchor="middle" fill="var(--data)">commands from the browser</text>
+
+  <line class="wire" x1="514" y1="206" x2="260" y2="206" stroke="var(--data)" marker-end="url(#arrow-data)"/>
+  <text class="wirelabel" x="385" y="198" text-anchor="middle" fill="var(--data)">measurements from the module</text>
+
+  <line class="wire" x1="514" y1="261" x2="440" y2="261" stroke="var(--muted)" stroke-dasharray="4 4"/>
+  <text class="sub" x="430" y="265" text-anchor="end">optional presence output</text>
+
+  <!-- ===================== The mistake that destroys the module ===================== -->
+  <rect x="40" y="448" width="680" height="44" rx="8" fill="none" stroke="var(--power)" stroke-width="1.5"/>
+  <text class="pinlabel" x="60" y="470" fill="var(--power)" font-weight="650">Set the bridge to 3.3 V before wiring.</text>
+  <text class="sub" x="60" y="486" fill="var(--power)">Many FT232RL boards ship jumpered to 5 V, which destroys the module.</text>
 </svg>

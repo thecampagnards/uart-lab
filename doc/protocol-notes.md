@@ -107,6 +107,23 @@ The interface asks for an explicit acknowledgement and a confirmation before
 step 2, and states plainly that an interrupted transfer leaves the module
 waiting for another attempt rather than working.
 
+### How far this generalises
+
+The frame envelope (`FD FC FB FA … 04 03 02 01`) is shared across Hi-Link's LD
+family, and the vendor tools for the other modules offer the same "get firmware
+information, pick a `.bin`, burn" workflow — which suggests one bootloader
+design across the range. But every one of `0x70`–`0x75` is annotated in the
+upstream document as having been captured from _HLK-LD2420_Tool v1.2.0.0_, and
+nothing published confirms that the command bytes, the 128-byte block size or
+the status codes are the same elsewhere.
+
+So the transfer lives in `src/core/firmware.ts`, parameterised by a
+`FirmwareProtocol` descriptor, and the LD2420 descriptor is the only one marked
+`verified`. The Generic flash tab lets the sizes be adjusted and says plainly
+that the command bytes are unconfirmed. They are _not_ editable: changing them
+without a capture of the vendor tool's traffic would be guessing, and a UI
+cannot help with that.
+
 ## Commands deliberately not exposed
 
 - `0x01` / `0x02` (raw registers) — the meaning of the 256 registers is not

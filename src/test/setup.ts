@@ -30,6 +30,18 @@ if (typeof window !== 'undefined') {
     disconnect(): void {}
   }
 
+  // jsdom has no font loading API; Mantine's autosize textarea listens on it.
+  if (typeof document !== 'undefined' && document.fonts === undefined) {
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: {
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        ready: Promise.resolve(),
+      },
+    })
+  }
+
   // jsdom's Blob predates Blob.arrayBuffer(); FileReader is what it does have.
   if (typeof Blob !== 'undefined' && typeof Blob.prototype.arrayBuffer !== 'function') {
     Blob.prototype.arrayBuffer = function arrayBuffer(this: Blob): Promise<ArrayBuffer> {

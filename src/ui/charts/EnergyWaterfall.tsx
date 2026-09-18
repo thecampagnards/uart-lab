@@ -48,7 +48,18 @@ export const EnergyWaterfall = memo(function EnergyWaterfall({
   const plotHeight = Math.max(MIN_HEIGHT, height)
   return (
     <div>
-      <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height: plotHeight }}>
+      {/*
+        ParentSize's wrapper defaults to `height: 100%`, which is indefinite
+        inside an auto-height Card — so it does not carry the SVG's height into
+        the flow, and Card (which is overflow: hidden) clips the chart. Giving
+        the wrapper the same explicit height as the SVG makes the card grow to
+        fit it.
+      */}
+      <ParentSize
+        debounceTime={80}
+        initialSize={{ width: INITIAL_WIDTH, height: plotHeight }}
+        style={{ height: plotHeight }}
+      >
         {({ width }) => (width > 0 ? <Plot {...rest} height={plotHeight} width={width} /> : null)}
       </ParentSize>
       <MantineGroup gap="xs" mt={8} pl={24} wrap="nowrap">
@@ -108,6 +119,7 @@ function Plot({
       <svg
         width={width}
         height={HEIGHT}
+        style={{ display: 'block' }}
         role="img"
         aria-label="Per-gate energy history: time runs left to right, gates top to bottom, and blue intensity gives the energy. The values are in the table below the chart."
       >

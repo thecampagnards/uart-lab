@@ -29,7 +29,7 @@ import {
   type OperatingModeValue,
 } from './constants'
 import { factoryConfig } from './config'
-import { firmwareChecksum } from './frames'
+import { firmwareChecksum } from '../../core/firmware'
 
 export interface SimulatorOptions {
   firmware?: string

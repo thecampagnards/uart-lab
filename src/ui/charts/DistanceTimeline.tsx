@@ -45,7 +45,13 @@ export interface DistanceTimelineProps {
 
 export function DistanceTimeline({ height = DEFAULT_HEIGHT, ...rest }: DistanceTimelineProps) {
   return (
-    <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height }}>
+    /*
+      ParentSize's wrapper defaults to `height: 100%`, which is indefinite
+      inside an auto-height Card — so it does not carry the SVG's height into
+      the flow, and Card (which is overflow: hidden) clips the chart. Giving the
+      wrapper the same explicit height as the SVG makes the card grow to fit it.
+    */
+    <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height }} style={{ height }}>
       {({ width }) => (width > 0 ? <Plot {...rest} height={height} width={width} /> : null)}
     </ParentSize>
   )
@@ -124,6 +130,7 @@ function Plot({
       <svg
         width={width}
         height={HEIGHT}
+        style={{ display: 'block' }}
         role="img"
         aria-label="Detected distance over the recent window. Stretches with no presence appear in grey."
       >

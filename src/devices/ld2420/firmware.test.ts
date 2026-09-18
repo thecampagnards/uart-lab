@@ -8,17 +8,19 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fromHex, toHex } from '../../core/bytes'
-import { FIRMWARE_BLOCK_SIZE, FLASH_SIZE_BYTES } from './constants'
+import { FIRMWARE_BLOCK_SIZE } from './constants'
+import { LD2420_FIRMWARE } from './firmwareProfile'
+import { cmdInitFirmwareUpgrade, cmdSendFirmwareBlock, cmdSetUpgradeMode } from './frames'
 import {
-  cmdInitFirmwareUpgrade,
-  cmdSendFirmwareBlock,
-  cmdSetUpgradeMode,
+  FirmwareError,
   describeBlockStatus,
   describeInitStatus,
   firmwareChecksum,
   splitFirmwareBlocks,
-} from './frames'
-import { FirmwareError, Ld2420Driver, validateFirmwareImage, type FirmwareProgress } from './driver'
+  validateFirmwareImage,
+  type FirmwareProgress,
+} from '../../core/firmware'
+import { Ld2420Driver } from './driver'
 import { Ld2420Simulator, type SimulatorOptions } from './simulator'
 
 /** A deterministic, 4-byte-aligned image. */
@@ -64,34 +66,38 @@ describe('firmware framing', () => {
   })
 
   it('names the documented failure statuses', () => {
-    expect(describeInitStatus(0x00)).toBeNull()
-    expect(describeInitStatus(0x94)).toBeNull() // a buffer size, not an error
-    expect(describeInitStatus(0x04)).toMatch(/erase/i)
-    expect(describeBlockStatus(0x00)).toEqual([])
-    expect(describeBlockStatus(0x80)).toEqual([])
-    expect(describeBlockStatus(0x20)).toEqual([expect.stringMatching(/4-byte aligned/)])
+    expect(describeInitStatus(0x00, LD2420_FIRMWARE)).toBeNull()
+    expect(describeInitStatus(0x94, LD2420_FIRMWARE)).toBeNull() // a buffer size, not an error
+    expect(describeInitStatus(0x04, LD2420_FIRMWARE)).toMatch(/erase/i)
+    expect(describeBlockStatus(0x00, LD2420_FIRMWARE)).toEqual([])
+    expect(describeBlockStatus(0x80, LD2420_FIRMWARE)).toEqual([])
+    expect(describeBlockStatus(0x20, LD2420_FIRMWARE)).toEqual([
+      expect.stringMatching(/4-byte aligned/),
+    ])
     // The field is a bit set, so several reasons can arrive together.
-    expect(describeBlockStatus(0x0a)).toHaveLength(2)
-    expect(describeBlockStatus(0x1000)).toEqual([expect.stringMatching(/Unknown block status/)])
+    expect(describeBlockStatus(0x0a, LD2420_FIRMWARE)).toHaveLength(2)
+    expect(describeBlockStatus(0x1000, LD2420_FIRMWARE)).toEqual([
+      expect.stringMatching(/Unknown block status/),
+    ])
   })
 })
 
 describe('validateFirmwareImage', () => {
   it('accepts a well-formed image', () => {
-    expect(validateFirmwareImage(image(1024), FLASH_SIZE_BYTES)).toEqual([])
+    expect(validateFirmwareImage(image(1024), LD2420_FIRMWARE)).toEqual([])
   })
 
   it('rejects an empty file', () => {
-    expect(validateFirmwareImage(new Uint8Array(0), FLASH_SIZE_BYTES)[0]).toMatch(/empty/i)
+    expect(validateFirmwareImage(new Uint8Array(0), LD2420_FIRMWARE)[0]).toMatch(/empty/i)
   })
 
   it('rejects an unaligned image before anything irreversible happens', () => {
-    expect(validateFirmwareImage(image(1022), FLASH_SIZE_BYTES)[0]).toMatch(/multiple of 4/)
+    expect(validateFirmwareImage(image(1022), LD2420_FIRMWARE)[0]).toMatch(/multiple of 4/)
   })
 
   it('rejects an image larger than the flash', () => {
-    expect(validateFirmwareImage(image(FLASH_SIZE_BYTES + 4), FLASH_SIZE_BYTES)[0]).toMatch(
-      /flash is/,
+    expect(validateFirmwareImage(image(LD2420_FIRMWARE.flashSize + 4), LD2420_FIRMWARE)[0]).toMatch(
+      /target flash is/,
     )
   })
 })

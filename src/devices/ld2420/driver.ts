@@ -10,17 +10,21 @@ import { Emitter, type Transport, type Unsubscribe } from '../../core/transport'
 import {
   ActiveFirmware,
   BAUD_RATES,
-  BlockStatus,
   Cmd,
   DEFAULT_BAUD_RATE,
-  FIRMWARE_BLOCK_SIZE,
   MAX_CMD_FRAME_LENGTH,
-  MAX_FIRMWARE_FRAME_LENGTH,
   OperatingMode,
   TOTAL_GATES,
   UpgradePartition,
   type OperatingModeValue,
 } from './constants'
+import {
+  runFirmwareUpload,
+  type FirmwarePort,
+  type FirmwareProgress,
+  type FirmwareProtocol,
+} from '../../core/firmware'
+import { LD2420_FIRMWARE } from './firmwareProfile'
 import {
   MAX_PARAM_READS_PER_FRAME,
   MAX_PARAM_WRITES_PER_FRAME,
@@ -28,9 +32,7 @@ import {
   cmdGetActiveFirmware,
   cmdGetBaudRate,
   cmdGetUpgradePartition,
-  cmdInitFirmwareUpgrade,
-  cmdSendFirmwareBlock,
-  cmdSetUpgradeMode,
+  encodeCommand,
   cmdGetParameters,
   cmdGetSerial,
   cmdGetVersion,
@@ -40,10 +42,6 @@ import {
   cmdSetMode,
   cmdSetParameters,
   configAddresses,
-  describeBlockStatus,
-  describeInitStatus,
-  firmwareChecksum,
-  splitFirmwareBlocks,
   Ld2420FrameReader,
   type CommandResponse,
   type ParamWrite,
@@ -108,9 +106,6 @@ interface PendingCommand {
 }
 
 const COMMAND_TIMEOUT_MS = 1500
-/** `init_firmware_upgrade` erases a flash partition before answering. */
-const FLASH_ERASE_TIMEOUT_MS = 20_000
-const FLASH_BLOCK_TIMEOUT_MS = 6_000
 /** Report mode can be noisy; the tail of a config read is worth waiting for. */
 const BULK_TIMEOUT_MS = 3000
 const MAX_TRACE_ENTRIES = 500
@@ -531,118 +526,55 @@ export class Ld2420Driver {
   }
 
   /**
-   * Write a firmware image to the module.
+   * Adapter between the driver's queued, framed exchanges and the
+   * device-independent transfer in `core/firmware`.
+   */
+  private firmwarePort(): FirmwarePort {
+    return {
+      exchange: async (command, payload, timeoutMs, maxFrameLength) => {
+        const frame = encodeCommand(command, payload, maxFrameLength)
+        const reply = await this.exchange(command, frame, timeoutMs, maxFrameLength)
+        return reply.data
+      },
+      send: async (command, payload) => {
+        await this.send(command, encodeCommand(command, payload))
+      },
+      wait: delay,
+    }
+  }
+
+  /**
+   * Write a firmware image using the LD2420's own descriptor.
    *
-   * This is the one irreversible operation in the driver. `set_upgrade_mode`
-   * (0x74) stops the module answering almost every other command, and the
-   * protocol document records no way back out except finishing the transfer —
-   * so once step 3 below has run, the only safe direction is forwards. The
-   * caller is responsible for getting informed consent before calling this.
-   *
-   * The sequence is: read the target partition, enter upgrade mode, announce the
-   * image with `init_firmware_upgrade` (which erases the partition), stream the
-   * blocks, then reboot.
+   * Irreversible once started: see {@link runFirmwareUpload}. The caller is
+   * responsible for taking informed consent first.
    */
   uploadFirmware(
     image: Uint8Array,
-    options: { onProgress?: (progress: FirmwareProgress) => void; blockSize?: number } = {},
+    options: { onProgress?: (progress: FirmwareProgress) => void } = {},
   ): Promise<void> {
-    const blockSize = options.blockSize ?? FIRMWARE_BLOCK_SIZE
-    const report = options.onProgress ?? ((): void => undefined)
-    const blocks = splitFirmwareBlocks(image, blockSize)
-    const totals = { totalBlocks: blocks.length, totalBytes: image.length }
-
-    return this.enqueue(async () => {
-      let blocksSent = 0
-      const progress = (phase: FirmwarePhase, message?: string): void => {
-        report({
-          phase,
-          blocksSent,
-          bytesSent: Math.min(image.length, blocksSent * blockSize),
-          ...totals,
-          ...(message === undefined ? {} : { message }),
-        })
-      }
-
-      progress('preparing')
-      await this.exchange(Cmd.OpenCommandMode, cmdOpenCommandMode())
-      this.commandMode_ = true
-
-      const partitionReply = await this.exchange(Cmd.GetUpgradePartition, cmdGetUpgradePartition())
-      const partition = partitionReply.data.length >= 4 ? readU32le(partitionReply.data, 0) : 0
-      if (UpgradePartition[partition] === undefined) {
-        throw new FirmwareError(
-          `The module reported an unusable upgrade partition (0x${partition.toString(16)}). ` +
-            'Nothing has been written.',
-          0,
-        )
-      }
-
-      // Point of no return: from here the module answers almost nothing else.
-      progress('erasing', 'Entering upgrade mode')
-      await this.send(Cmd.SetUpgradeMode, cmdSetUpgradeMode())
-      await delay(400)
-
-      const init = await this.exchange(
-        Cmd.InitFirmwareUpgrade,
-        cmdInitFirmwareUpgrade(partition, image.length, firmwareChecksum(image)),
-        FLASH_ERASE_TIMEOUT_MS,
-      )
-      const initStatus = init.data.length >= 4 ? readU32le(init.data, 0) : 0
-      const initProblem = describeInitStatus(initStatus)
-      if (initProblem) throw new FirmwareError(initProblem, 0)
-
-      // The protocol document contradicts itself on the block counter: the prose
-      // says the first block is 0, the worked example shows 1. Start at 0 and,
-      // if the module rejects the sequence number on the very first block,
-      // switch to 1-based and retry rather than failing the transfer.
-      let counterBase = 0
-      progress('writing')
-
-      for (let index = 0; index < blocks.length; index++) {
-        const block = blocks[index]!
-        let status = await this.sendFirmwareBlock(counterBase + index, block)
-
-        if (index === 0 && (status & BlockStatus.CounterError) !== 0 && counterBase === 0) {
-          counterBase = 1
-          status = await this.sendFirmwareBlock(counterBase + index, block)
-        }
-
-        const problems = describeBlockStatus(status)
-        if (problems.length > 0) {
-          throw new FirmwareError(
-            `Block ${index + 1} of ${blocks.length} rejected: ${problems.join(' ')}`,
-            blocksSent,
-          )
-        }
-
-        blocksSent = index + 1
-        if (status === BlockStatus.Programmed) {
-          progress('verifying', 'Module reported programming complete')
-          break
-        }
-        progress('writing')
-      }
-
-      progress('restarting')
-      await this.send(Cmd.Reboot, cmdReboot())
-      this.commandMode_ = false
-      this.mode_ = OperatingMode.Simple
-      this.reader.reset()
-      this.identity_ = {}
-      await delay(600)
-      progress('done')
-    })
+    return this.uploadFirmwareWith(image, LD2420_FIRMWARE, options)
   }
 
-  private async sendFirmwareBlock(counter: number, block: Uint8Array): Promise<number> {
-    const reply = await this.exchange(
-      Cmd.SendFirmwareBlock,
-      cmdSendFirmwareBlock(counter, block),
-      FLASH_BLOCK_TIMEOUT_MS,
-      MAX_FIRMWARE_FRAME_LENGTH,
-    )
-    return reply.data.length >= 4 ? readU32le(reply.data, 0) : 0
+  /** As {@link uploadFirmware}, but against an arbitrary protocol descriptor. */
+  uploadFirmwareWith(
+    image: Uint8Array,
+    protocol: FirmwareProtocol,
+    options: { onProgress?: (progress: FirmwareProgress) => void } = {},
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      await this.exchange(Cmd.OpenCommandMode, cmdOpenCommandMode())
+      this.commandMode_ = true
+      try {
+        await runFirmwareUpload(this.firmwarePort(), image, protocol, options.onProgress)
+      } finally {
+        // Whether it succeeded or not, the module is no longer where we left it.
+        this.commandMode_ = false
+        this.mode_ = OperatingMode.Simple
+        this.reader.reset()
+        this.identity_ = {}
+      }
+    })
   }
 }
 
@@ -680,6 +612,16 @@ export function cloneMeasurementConfig(config: Ld2420Config): Ld2420Config {
 // Firmware upgrade
 // ---------------------------------------------------------------------------
 
+export {
+  FirmwareError,
+  firmwareChecksum,
+  splitFirmwareBlocks,
+  validateFirmwareImage,
+  type FirmwarePhase,
+  type FirmwareProgress,
+  type FirmwareProtocol,
+} from '../../core/firmware'
+
 export interface FirmwareInfo {
   /** Which image is currently running: bootloader, app 0 or app 1. */
   active: string
@@ -687,58 +629,4 @@ export interface FirmwareInfo {
   /** Which partition a transfer would be written into. */
   partition: string
   partitionRaw: number
-}
-
-export type FirmwarePhase =
-  'preparing' | 'erasing' | 'writing' | 'verifying' | 'restarting' | 'done'
-
-export interface FirmwareProgress {
-  phase: FirmwarePhase
-  blocksSent: number
-  totalBlocks: number
-  bytesSent: number
-  totalBytes: number
-  message?: string
-}
-
-export class FirmwareError extends Error {
-  constructor(
-    message: string,
-    /** Blocks written before the failure, so the UI can say how far it got. */
-    readonly blocksSent: number,
-  ) {
-    super(message)
-    this.name = 'FirmwareError'
-  }
-}
-
-export class FirmwareValidationError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'FirmwareValidationError'
-  }
-}
-
-/**
- * Check an image before anything irreversible happens.
- *
- * Alignment is the one the module enforces (block status 0x20); the rest is
- * there to catch an obviously wrong file — a .txt, a truncated download — while
- * the module is still in a recoverable state.
- */
-export function validateFirmwareImage(image: Uint8Array, flashSize: number): string[] {
-  const problems: string[] = []
-  if (image.length === 0) problems.push('The file is empty.')
-  if (image.length % 4 !== 0) {
-    problems.push(
-      `The image is ${image.length} bytes, which is not a multiple of 4. The module rejects ` +
-        'unaligned data (block status 0x20).',
-    )
-  }
-  if (image.length > flashSize) {
-    problems.push(
-      `The image is ${image.length} bytes but the module's flash is ${flashSize} bytes.`,
-    )
-  }
-  return problems
 }

@@ -15,8 +15,6 @@ import {
 } from '../../core/bytes'
 import {
   ACK,
-  BLOCK_ERRORS,
-  BlockStatus,
   CMD_FOOTER,
   CMD_HEADER,
   Cmd,
@@ -25,7 +23,6 @@ import {
   ENERGY_FOOTER,
   ENERGY_HEADER,
   FrameType,
-  INIT_ERRORS,
   MAX_CMD_FRAME_LENGTH,
   MAX_FIRMWARE_FRAME_LENGTH,
   TOTAL_GATES,
@@ -33,6 +30,7 @@ import {
   stillThresholdAddr,
   type OperatingModeValue,
 } from './constants'
+import { firmwareChecksum } from '../../core/firmware'
 
 // ---------------------------------------------------------------------------
 // Encoding
@@ -142,37 +140,6 @@ export function cmdSendFirmwareBlock(counter: number, block: Uint8Array): Uint8A
     concat(u32le(counter), u32le(firmwareChecksum(block)), block),
     MAX_FIRMWARE_FRAME_LENGTH,
   )
-}
-
-/** Sum of the bytes, truncated to 32 bits — what commands 0x72 and 0x73 expect. */
-export function firmwareChecksum(bytes: Uint8Array): number {
-  let sum = 0
-  for (const byte of bytes) sum = (sum + byte) >>> 0
-  return sum >>> 0
-}
-
-/** Human-readable reason for a rejected `init_firmware_upgrade`, or null if it succeeded. */
-export function describeInitStatus(dataStatus: number): string | null {
-  return INIT_ERRORS[dataStatus] ?? null
-}
-
-/**
- * Human-readable reasons for a rejected block. The field is a bit set, so more
- * than one can be raised at once.
- */
-export function describeBlockStatus(dataStatus: number): string[] {
-  if (dataStatus === BlockStatus.Written || dataStatus === BlockStatus.Programmed) return []
-  const reasons = BLOCK_ERRORS.filter(([bit]) => (dataStatus & bit) !== 0).map(([, text]) => text)
-  return reasons.length > 0 ? reasons : [`Unknown block status 0x${dataStatus.toString(16)}.`]
-}
-
-/** Split an image into the fixed-size blocks the module accepts. */
-export function splitFirmwareBlocks(image: Uint8Array, blockSize: number): Uint8Array[] {
-  const blocks: Uint8Array[] = []
-  for (let at = 0; at < image.length; at += blockSize) {
-    blocks.push(image.slice(at, Math.min(at + blockSize, image.length)))
-  }
-  return blocks
 }
 
 /**

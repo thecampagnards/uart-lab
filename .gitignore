@@ -6,3 +6,6 @@ coverage/
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Screenshots dropped in for review, not part of the project.
+/image*.png

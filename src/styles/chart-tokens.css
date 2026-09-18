@@ -50,8 +50,24 @@
   word-break: break-all;
 }
 
-/* The wiring diagram is inlined from doc/wiring-ft232rl.svg, which carries its
-   own width and height; override them so it scales with the card. */
+/*
+ * The wiring diagram is inlined from doc/wiring-ft232rl.svg with its standalone
+ * colour rules stripped, so the app supplies them here and the drawing follows
+ * the in-app theme toggle rather than the operating system.
+ */
+.wiring-diagram {
+  color: var(--mantine-color-text);
+  --power: #c62f2f;
+  --data: #1f6fd0;
+  --muted: var(--mantine-color-dimmed);
+}
+
+[data-mantine-color-scheme='dark'] .wiring-diagram {
+  --power: #e06a6a;
+  --data: #5c9bec;
+}
+
+/* The file carries its own width and height; override them so it scales. */
 .wiring-diagram svg {
   display: block;
   width: 100%;

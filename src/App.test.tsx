@@ -10,6 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
+import { factoryConfig } from './devices/ld2420/config'
+
+const factory = factoryConfig()
 
 /** A .bin file of `size` bytes, as the file picker would hand it over. */
 function bin(name: string, size: number): File {
@@ -41,7 +44,8 @@ describe('App', () => {
     // The claim the picture is there to make: the two data wires run one way each.
     expect(diagram.getAttribute('aria-label')).toMatch(/TXD to the module's RX/)
     expect(diagram.getAttribute('aria-label')).toMatch(/OT1 back to the bridge's RXD/)
-    expect(diagram.getAttribute('aria-label')).toMatch(/3\.3 volts/)
+    // And the mistake that destroys the module.
+    expect(diagram.getAttribute('aria-label')).toMatch(/5V pin must never be connected/)
   })
 
   it('warns that configuration needs a connection', async () => {
@@ -142,6 +146,73 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Read firmware information' }))
     expect(await screen.findByText('Running image')).toBeInTheDocument()
     expect(screen.getAllByText('App 0').length).toBeGreaterThan(0)
+  }, 20_000)
+
+  it('shows the configuration as JSON and takes a pasted one back', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
+    await screen.findByText('v1.6.1')
+    await user.click(screen.getByRole('tab', { name: 'Configuration' }))
+
+    const json = await screen.findByLabelText('Configuration as JSON')
+    expect(json).toHaveAttribute('readonly')
+    expect((json as HTMLTextAreaElement).value).toContain('"uart-lab/ld2420-config"')
+    expect((json as HTMLTextAreaElement).value).toContain('"timeoutS": 30')
+
+    // Pasting loads the form without touching the module.
+    await user.click(screen.getByRole('radio', { name: 'Paste' }))
+    const editable = screen.getByLabelText('Configuration as JSON')
+    await user.clear(editable)
+    await user.paste(JSON.stringify({ ...factory, timeoutS: 77 }))
+    await user.click(screen.getByRole('button', { name: 'Load into the form' }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Absence delay/)).toHaveValue('77')
+    })
+    expect(screen.getByText('Unwritten changes')).toBeInTheDocument()
+  }, 20_000)
+
+  it('refuses a pasted configuration that is not valid', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
+    await screen.findByText('v1.6.1')
+    await user.click(screen.getByRole('tab', { name: 'Configuration' }))
+
+    await user.click(screen.getByRole('radio', { name: 'Paste' }))
+    const editable = screen.getByLabelText('Configuration as JSON')
+    await user.clear(editable)
+    await user.paste(JSON.stringify({ ...factory, maxGate: 99 }))
+    await user.click(screen.getByRole('button', { name: 'Load into the form' }))
+
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts.some((node) => /Invalid configuration/.test(node.textContent ?? ''))).toBe(true)
+    // The form is untouched.
+    expect(screen.getByLabelText('Maximum gate')).toHaveValue('12')
+  }, 20_000)
+
+  it('keeps the generic flasher behind its own extra acknowledgement', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
+    await screen.findByText('v1.6.1')
+    await user.click(screen.getByRole('tab', { name: 'Generic flash' }))
+
+    // The unverified profile is the default here, and says so.
+    expect(await screen.findByText(/only been observed on the LD2420/)).toBeInTheDocument()
+
+    const picker = document.querySelector('input[type="file"]')
+    await user.upload(picker as HTMLInputElement, bin('other.bin', 512))
+    await screen.findByText('512 bytes')
+
+    const write = screen.getByRole('button', { name: 'Write firmware to module' })
+    expect(write).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /cannot be undone/i }))
+    // Still disabled: the generic path asks for a second confirmation.
+    expect(screen.getByRole('button', { name: 'Write firmware to module' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /confirmed these command bytes/i }))
+    expect(screen.getByRole('button', { name: 'Write firmware to module' })).toBeEnabled()
   }, 20_000)
 
   it('exposes the serial trace', async () => {

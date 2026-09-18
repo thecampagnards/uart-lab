@@ -27,7 +27,8 @@ import {
   type FirmwareProgress,
   type TraceEntry,
 } from '../devices/ld2420/driver'
-import { FLASH_SIZE_BYTES } from '../devices/ld2420/constants'
+import { LD2420_FIRMWARE } from '../devices/ld2420/firmwareProfile'
+import type { FirmwareProtocol } from '../core/firmware'
 import { Ld2420Simulator } from '../devices/ld2420/simulator'
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'busy'
@@ -335,13 +336,13 @@ export function useLd2420Session() {
    * to have taken explicit confirmation first.
    */
   const uploadFirmware = useCallback(
-    async (image: Uint8Array) => {
+    async (image: Uint8Array, protocol: FirmwareProtocol = LD2420_FIRMWARE) => {
       const driver = driverRef.current
       if (!driver) {
         notify('error', 'No device connected.')
         return
       }
-      const problems = validateFirmwareImage(image, FLASH_SIZE_BYTES)
+      const problems = validateFirmwareImage(image, protocol)
       if (problems.length > 0) {
         notify('error', problems.join(' '))
         return
@@ -349,7 +350,7 @@ export function useLd2420Session() {
 
       patch({ pendingOperation: 'Writing firmware', status: 'busy' })
       try {
-        await driver.uploadFirmware(image, {
+        await driver.uploadFirmwareWith(image, protocol, {
           onProgress: (firmwareProgress) => patch({ firmwareProgress }),
         })
         historyRef.current.clear()

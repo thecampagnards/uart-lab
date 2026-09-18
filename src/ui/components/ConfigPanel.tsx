@@ -27,6 +27,7 @@ import {
 import { linearToDb } from '../../devices/ld2420/frames'
 import type { SessionState } from '../../hooks/useLd2420Session'
 import { gateRangeLabel } from '../charts/format'
+import { ConfigJsonPanel } from './ConfigJsonPanel'
 
 export interface ConfigPanelProps {
   state: SessionState
@@ -294,6 +295,17 @@ export function ConfigPanel({
           <Code>0x74</Code> leaves the module unusable if the transfer does not complete.
         </Text>
       </Card>
+
+      <ConfigJsonPanel
+        config={draft}
+        device={{
+          ...(state.identity.firmware !== undefined ? { firmware: state.identity.firmware } : {}),
+          ...(state.identity.serial !== undefined ? { serial: state.identity.serial } : {}),
+        }}
+        disabled={locked}
+        onApply={(next) => onChange(() => next)}
+        onError={onError}
+      />
 
       <Modal
         opened={confirmOpen}

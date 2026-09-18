@@ -20,6 +20,7 @@ import { theme } from './theme'
 import { ConfigPanel } from './ui/components/ConfigPanel'
 import { ConnectionPanel } from './ui/components/ConnectionPanel'
 import { FirmwarePanel } from './ui/components/FirmwarePanel'
+import { GenericFlashPanel } from './ui/components/GenericFlashPanel'
 import { DeviceList } from './ui/components/DeviceList'
 import { LivePanel } from './ui/components/LivePanel'
 import { TracePanel } from './ui/components/TracePanel'
@@ -104,6 +105,7 @@ function Shell() {
               <Tabs.Tab value="live">Monitor</Tabs.Tab>
               <Tabs.Tab value="config">Configuration</Tabs.Tab>
               <Tabs.Tab value="firmware">Firmware</Tabs.Tab>
+              <Tabs.Tab value="flash">Generic flash</Tabs.Tab>
               <Tabs.Tab value="trace">Serial trace</Tabs.Tab>
             </Tabs.List>
 
@@ -146,12 +148,28 @@ function Shell() {
                   <FirmwarePanel
                     state={state}
                     onReadInfo={() => void actions.readFirmwareInfo()}
-                    onUpload={(image) => void actions.uploadFirmware(image)}
+                    onUpload={(image, protocol) => void actions.uploadFirmware(image, protocol)}
                     onError={(message) => actions.notify('error', message)}
                   />
                 ) : (
                   <Alert variant="light">
                     Connect a module to read its firmware information or write a new image.
+                  </Alert>
+                )}
+              </Stack>
+            </Tabs.Panel>
+
+            <Tabs.Panel value="flash" pt="md">
+              <Stack gap="md">
+                {connected ? (
+                  <GenericFlashPanel
+                    state={state}
+                    onUpload={(image, protocol) => void actions.uploadFirmware(image, protocol)}
+                    onError={(message) => actions.notify('error', message)}
+                  />
+                ) : (
+                  <Alert variant="light">
+                    Connect a module to write an image with a descriptor of your choosing.
                   </Alert>
                 )}
               </Stack>

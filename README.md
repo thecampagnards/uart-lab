@@ -19,9 +19,12 @@ presence radar.
   distance timeline and a time × gate heatmap.
 - **Configuration**: minimum and maximum gate, absence delay, and all 32
   thresholds (motion and still) — shown both raw and in dB.
-- **Import/export** of the configuration as JSON, factory reset, module restart.
+- **Import/export** of the configuration as JSON — as a file, or read and pasted
+  straight from the page — factory reset, module restart.
 - **Firmware update**: write a `.bin` image to the module, with the image
-  validated first and progress reported block by block.
+  validated first and progress reported block by block. A second tab drives the
+  same transfer against a protocol descriptor you choose, for another Hi-Link LD
+  module.
 - **Serial trace** in hex, to cross-check against the protocol documentation.
 - **Built-in simulated module**, to try the tool out or develop without a sensor.
 

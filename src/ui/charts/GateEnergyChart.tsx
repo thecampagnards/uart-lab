@@ -54,7 +54,18 @@ export function GateEnergyChart({ height = DEFAULT_HEIGHT, ...rest }: GateEnergy
           { label: 'Still threshold', color: SERIES.still, line: true },
         ]}
       />
-      <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height }}>
+      {/*
+        ParentSize's wrapper defaults to `height: 100%`, which is indefinite
+        inside an auto-height Card — so it does not carry the SVG's height into
+        the flow, and Card (which is overflow: hidden) clips the chart. Giving
+        the wrapper the same explicit height as the SVG makes the card grow to
+        fit it.
+      */}
+      <ParentSize
+        debounceTime={80}
+        initialSize={{ width: INITIAL_WIDTH, height }}
+        style={{ height }}
+      >
         {({ width }) => (width > 0 ? <Plot {...rest} height={height} width={width} /> : null)}
       </ParentSize>
     </div>
@@ -88,6 +99,7 @@ function Plot({
       <svg
         width={width}
         height={HEIGHT}
+        style={{ display: 'block' }}
         role="img"
         aria-label="Energy per distance gate, against the configured thresholds. The numeric values are in the table below the chart."
       >

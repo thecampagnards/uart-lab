@@ -57,6 +57,19 @@ In report mode the module emits 10–20 frames per second. Storing those in a
 
 The UI pulls data at display rate instead of being pushed at sensor rate.
 
+## Firmware transfer is device-independent
+
+`src/core/firmware.ts` holds the transfer itself; a `FirmwareProtocol`
+descriptor holds what differs between modules — command bytes, block and flash
+sizes, status tables, partition names. The frame envelope is shared across
+Hi-Link's LD family, so the sequence only had to be written once.
+
+Only `LD2420_FIRMWARE` is backed by observation. The generic descriptor exists
+because the family almost certainly shares one bootloader design, but nothing
+published confirms it; the Generic flash tab is deliberately a separate tab from
+the device firmware tab, and asks for a second acknowledgement, so the
+unverified path never looks like the supported one.
+
 ## Adding a device
 
 1. Create `src/devices/<id>/` with, at minimum, a frame codec, a driver and
