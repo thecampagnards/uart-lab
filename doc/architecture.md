@@ -151,6 +151,12 @@ from its capability list alone.
   the mark specs and the legend rules stay under the project's control instead
   of being whatever a charting library ships by default.
 
+One deliberate hold: **TypeScript stays on 6.x**. TypeScript 7 builds and runs
+the tests here without complaint, but `typescript-eslint` declares a peer range
+of `<6.1.0` and refuses to load against it, which would quietly cost every
+type-aware lint rule — the ones that have caught the most in this project.
+Dependabot is told to skip it until that support lands.
+
 Mantine owns the component surfaces; `src/styles/chart-tokens.css` owns the
 handful of values Mantine has no opinion about — the three categorical series
 slots, the sequential ramp and the recessive chart chrome. Those tokens are

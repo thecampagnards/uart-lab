@@ -4,6 +4,13 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    ignore:
+      # TypeScript 7 builds and tests fine here, but typescript-eslint does not
+      # support it (peer range `<6.1.0`), so adopting it would silently drop
+      # every type-aware lint rule. Revisit when typescript-eslint ships TS 7
+      # support: https://github.com/typescript-eslint/typescript-eslint/issues/10940
+      - dependency-name: typescript
+        versions: ['>=7']
     groups:
       # One PR per ecosystem rather than one per package.
       dev-dependencies:

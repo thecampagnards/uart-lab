@@ -65,17 +65,30 @@ export interface SessionState {
 let noticeId = 0
 
 export function useLd2420Session() {
-  const historyRef = useRef(new MeasurementHistory(3000))
+  /**
+   * Created once and never replaced. `useState` with an initialiser rather than
+   * a ref: these are values the render returns, and a ref read during render is
+   * something React cannot reason about.
+   */
+  const [history] = useState(() => new MeasurementHistory(3000))
   /**
    * The unframed stream, tapped straight off the transport. Kept beside the
    * decoded history rather than derived from it: when you do not know what is
    * on the wire, the decoder's assumptions are what hide the answer.
    */
-  const rawRef = useRef(new RawSerialLog())
+  const [raw] = useState(() => new RawSerialLog())
   const openedAtRef = useRef(0)
   /** Latest state, readable from callbacks without adding it as a dependency. */
   const stateRef = useRef<SessionState | null>(null)
   const driverRef = useRef<Ld2420Driver | null>(null)
+  /**
+   * The same driver, mirrored into state.
+   *
+   * The ref is what the callbacks use — keeping it out of their dependency
+   * lists. The state copy is what render reads, because the trace it exposes is
+   * part of the rendered output and a ref is not something render may touch.
+   */
+  const [driver, setDriver] = useState<Ld2420Driver | null>(null)
   const transportRef = useRef<Transport | null>(null)
 
   const [state, setState] = useState<SessionState>(() => ({
@@ -117,6 +130,7 @@ export function useLd2420Session() {
   const teardown = useCallback(() => {
     driverRef.current?.detach()
     driverRef.current = null
+    setDriver(null)
     const transport = transportRef.current
     transportRef.current = null
     void transport?.close()
@@ -129,14 +143,13 @@ export function useLd2420Session() {
     async (transport: Transport, device: DeviceDescriptor) => {
       const driver = new Ld2420Driver(transport)
       driverRef.current = driver
+      setDriver(driver)
       transportRef.current = transport
       driver.attach()
 
       openedAtRef.current = performance.now()
-      transport.onData((chunk) =>
-        rawRef.current.push('rx', chunk, performance.now() - openedAtRef.current),
-      )
-      driver.onMeasurement((measurement) => historyRef.current.push(measurement))
+      transport.onData((chunk) => raw.push('rx', chunk, performance.now() - openedAtRef.current))
+      driver.onMeasurement((measurement) => history.push(measurement))
       driver.onTrace(() => setState((p) => ({ ...p, traceVersion: p.traceVersion + 1 })))
       driver.onIdentity((identity) => patch({ identity }))
       driver.onError((error) => notify('error', error.message))
@@ -144,6 +157,7 @@ export function useLd2420Session() {
       transport.onClose((reason) => {
         if (reason) notify('error', `Lien interrompu : ${reason.message}`)
         driverRef.current = null
+        setDriver(null)
         transportRef.current = null
         patch({ status: 'disconnected', transportKind: null, portLabel: null })
       })
@@ -182,7 +196,7 @@ export function useLd2420Session() {
         notify('warning', `Could not switch to report mode: ${describe(error)}`)
       }
     },
-    [notify, patch],
+    [history, notify, patch, raw],
   )
 
   const connectSerial = useCallback(
@@ -197,8 +211,8 @@ export function useLd2420Session() {
       patch({ status: 'connecting' })
       try {
         const transport = await WebSerialTransport.request(device.portFilters)
-        historyRef.current.clear()
-        rawRef.current.clear()
+        history.clear()
+        raw.clear()
         await transport.open(baudRate)
         await attach(transport, device)
       } catch (error) {
@@ -207,7 +221,7 @@ export function useLd2420Session() {
         notify('error', `Could not connect: ${describe(error)}`)
       }
     },
-    [attach, notify, patch],
+    [attach, history, notify, patch, raw],
   )
 
   const connectSimulator = useCallback(
@@ -215,7 +229,8 @@ export function useLd2420Session() {
       patch({ status: 'connecting' })
       try {
         const simulator = new Ld2420Simulator()
-        historyRef.current.clear()
+        history.clear()
+        raw.clear()
         await simulator.open(DEFAULT_BAUD_RATE)
         await attach(simulator, device)
         notify('info', 'Simulated demo: no hardware is connected, the data is generated.')
@@ -224,7 +239,7 @@ export function useLd2420Session() {
         notify('error', `Could not start the demo: ${describe(error)}`)
       }
     },
-    [attach, notify, patch],
+    [attach, history, notify, patch, raw],
   )
 
   const disconnect = useCallback(async () => {
@@ -341,11 +356,11 @@ export function useLd2420Session() {
         return mode
       })
       if (result !== null) {
-        historyRef.current.clear()
+        history.clear()
         patch({ mode })
       }
     },
-    [patch, run],
+    [history, patch, run],
   )
 
   /**
@@ -362,12 +377,12 @@ export function useLd2420Session() {
       }
       try {
         await transport.write(bytes)
-        rawRef.current.push('tx', bytes, performance.now() - openedAtRef.current)
+        raw.push('tx', bytes, performance.now() - openedAtRef.current)
       } catch (error) {
         notify('error', `Could not send: ${describe(error)}`)
       }
     },
-    [notify],
+    [notify, raw],
   )
 
   const readFirmwareInfo = useCallback(async () => {
@@ -397,7 +412,7 @@ export function useLd2420Session() {
         await driver.uploadFirmwareWith(image, protocol, {
           onProgress: (firmwareProgress) => patch({ firmwareProgress }),
         })
-        historyRef.current.clear()
+        history.clear()
         patch({
           mode: OperatingMode.Simple,
           identity: {},
@@ -422,7 +437,7 @@ export function useLd2420Session() {
         })
       }
     },
-    [notify, patch],
+    [history, notify, patch],
   )
 
   const reboot = useCallback(async () => {
@@ -431,14 +446,20 @@ export function useLd2420Session() {
       return true
     })
     if (result) {
-      historyRef.current.clear()
+      history.clear()
       patch({ mode: OperatingMode.Simple })
       notify('info', 'Module restarted. It comes back in simple (ASCII) mode.')
     }
-  }, [notify, patch, run])
+  }, [history, notify, patch, run])
 
-  stateRef.current = state
-  const trace: readonly TraceEntry[] = driverRef.current?.trace ?? []
+  // Written after render, not during: callbacks that read it all run later.
+  useEffect(() => {
+    stateRef.current = state
+  })
+
+  // `traceVersion` is what makes this re-read; the array itself is mutated in
+  // place by the driver and has no identity to depend on.
+  const trace: readonly TraceEntry[] = driver?.trace ?? []
 
   const actions = useMemo(
     () => ({
@@ -457,15 +478,17 @@ export function useLd2420Session() {
       dismissNotice,
       notify,
       sendRaw,
-      clearRaw: () => rawRef.current.clear(),
+      clearRaw: () => raw.clear(),
       clearTrace: () => {
         driverRef.current?.clearTrace()
         setState((p) => ({ ...p, traceVersion: p.traceVersion + 1 }))
       },
-      clearHistory: () => historyRef.current.clear(),
+      clearHistory: () => history.clear(),
     }),
     [
       applyConfig,
+      history,
+      raw,
       connectSerial,
       connectSimulator,
       disconnect,
@@ -483,7 +506,7 @@ export function useLd2420Session() {
     ],
   )
 
-  return { state, actions, history: historyRef.current, raw: rawRef.current, trace }
+  return { state, actions, history, raw, trace }
 }
 
 function describe(error: unknown): string {

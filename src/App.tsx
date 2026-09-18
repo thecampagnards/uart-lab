@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -71,12 +71,11 @@ function Shell() {
     () => TAB_ORDER.filter((capability) => deviceCan(device, capability)),
     [device],
   )
-  const [tab, setTab] = useState<DeviceCapability>(tabs[0] ?? 'trace')
-
-  // Switching device can remove the tab that was open.
-  useEffect(() => {
-    if (!tabs.includes(tab)) setTab(tabs[0] ?? 'trace')
-  }, [tab, tabs])
+  const [requestedTab, setTab] = useState<DeviceCapability>(tabs[0] ?? 'trace')
+  // Switching device can remove the tab that was open. Falling back while
+  // rendering beats correcting it in an effect, which would paint the wrong
+  // tab first and then replace it.
+  const tab = tabs.includes(requestedTab) ? requestedTab : (tabs[0] ?? 'trace')
 
   const connected = state.status === 'connected' || state.status === 'busy'
 

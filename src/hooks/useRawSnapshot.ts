@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useRef, useSyncExternalStore } from 'react'
 import {
   renderRawLines,
   throughput,
@@ -17,6 +17,8 @@ export interface RawSnapshot {
   totals: { received: number; sent: number }
 }
 
+const EMPTY: RawSnapshot = { lines: [], rate: 0, totals: { received: 0, sent: 0 } }
+
 function read(log: RawSerialLog, mode: RawViewMode): RawSnapshot {
   const tail = log.tail(RENDER_WINDOW)
   return { lines: renderRawLines(tail, mode), rate: throughput(tail), totals: log.totals }
@@ -27,8 +29,9 @@ function read(log: RawSerialLog, mode: RawViewMode): RawSnapshot {
  *
  * The log is a mutable buffer outside React — its chunk array is appended to in
  * place, so it has no identity to depend on and a `useMemo` over it would never
- * recompute. Pulling on a frame budget is both correct and cheaper than a
- * render per chunk received.
+ * recompute. `useSyncExternalStore` is the primitive for a store React does not
+ * own: the timer lives in `subscribe` and caches each rendering, leaving
+ * `getSnapshot` pure.
  */
 export function useRawSnapshot(
   log: RawSerialLog,
@@ -36,26 +39,31 @@ export function useRawSnapshot(
   active: boolean,
   fps = 8,
 ): RawSnapshot {
-  const [snapshot, setSnapshot] = useState<RawSnapshot>(() => read(log, mode))
+  const cache = useRef<RawSnapshot>(EMPTY)
 
-  useEffect(() => {
-    // One immediate read, so a paused or closed link still shows its last state.
-    setSnapshot(read(log, mode))
-    if (!active) return
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      cache.current = read(log, mode)
+      onChange()
+      if (!active) return () => undefined
 
-    let frame = 0
-    let last = 0
-    const interval = 1000 / fps
-    const loop = (now: number): void => {
-      if (now - last >= interval) {
-        last = now
-        setSnapshot(read(log, mode))
+      let frame = 0
+      let last = 0
+      const interval = 1000 / fps
+      const loop = (now: number): void => {
+        if (now - last >= interval) {
+          last = now
+          cache.current = read(log, mode)
+          onChange()
+        }
+        frame = requestAnimationFrame(loop)
       }
       frame = requestAnimationFrame(loop)
-    }
-    frame = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(frame)
-  }, [active, fps, log, mode])
+      return () => cancelAnimationFrame(frame)
+    },
+    [active, fps, log, mode],
+  )
 
-  return snapshot
+  const getSnapshot = useCallback(() => cache.current, [])
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

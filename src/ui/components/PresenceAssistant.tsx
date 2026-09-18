@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -53,7 +53,16 @@ export function PresenceAssistant({
   const snapshot = useLiveSnapshot(history, RECORD_SECONDS * 1000, live || recording !== null, 5)
   const reportMode = state.mode === OperatingMode.Report
 
-  const remaining = recording ? Math.max(0, recording.endsAt - Date.now()) : 0
+  // The countdown needs the clock, and reading it while rendering makes the
+  // render impure — the same props would produce a different tree. A ticking
+  // state keeps the reading in an effect, where it belongs.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!recording) return
+    const timer = setInterval(() => setNow(Date.now()), 200)
+    return () => clearInterval(timer)
+  }, [recording])
+  const remaining = recording ? Math.max(0, recording.endsAt - now) : 0
 
   useEffect(() => {
     if (!recording) return
