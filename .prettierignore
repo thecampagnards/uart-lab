@@ -1,0 +1,7 @@
+dist
+coverage
+node_modules
+package-lock.json
+doc/*.pdf
+# Vendored upstream document — kept byte-for-byte as published.
+doc/hlk-ld2420-serial-protocol.md
