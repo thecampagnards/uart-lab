@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   Code,
-  Collapse,
   Group,
   NativeSelect,
   Stack,
@@ -133,9 +132,13 @@ export function ConnectionPanel({
               {wiringOpen ? 'Hide the diagram' : 'Show the diagram'}
             </Button>
           </Group>
-          <Collapse expanded={wiringOpen}>
-            <WiringDiagram />
-          </Collapse>
+          {/*
+            A plain conditional rather than Collapse: the content is a static
+            drawing, the animation buys nothing, and Collapse keeps its child
+            mounted behind React 19's Activity — which made this the slowest
+            thing in the test suite by two orders of magnitude.
+          */}
+          {wiringOpen ? <WiringDiagram /> : null}
         </Stack>
       )}
     </Card>

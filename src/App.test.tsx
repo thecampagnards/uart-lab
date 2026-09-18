@@ -48,6 +48,26 @@ describe('App', () => {
     expect(diagram.getAttribute('aria-label')).toMatch(/5V pin must never be connected/)
   })
 
+  it('follows the system theme until told otherwise, and can be told to follow again', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    // Auto is the default, and the attribute is resolved from the media query.
+    const auto = screen.getByRole('button', { name: 'Follow the system' })
+    expect(auto).toHaveAttribute('aria-pressed', 'true')
+    expect(document.documentElement).toHaveAttribute('data-mantine-color-scheme', 'light')
+
+    await user.click(screen.getByRole('button', { name: 'Dark' }))
+    expect(document.documentElement).toHaveAttribute('data-mantine-color-scheme', 'dark')
+    expect(screen.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true')
+    expect(auto).toHaveAttribute('aria-pressed', 'false')
+
+    // And back — a two-way toggle could never return to following the system.
+    await user.click(auto)
+    expect(auto).toHaveAttribute('aria-pressed', 'true')
+    expect(document.documentElement).toHaveAttribute('data-mantine-color-scheme', 'light')
+  })
+
   it('warns that configuration needs a connection', async () => {
     const user = userEvent.setup()
     render(<App />)

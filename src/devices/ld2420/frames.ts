@@ -76,12 +76,6 @@ export const cmdGetFirmwareId = (): Uint8Array => encodeCommand(Cmd.GetFirmwareI
 
 export const cmdReboot = (): Uint8Array => encodeCommand(Cmd.Reboot)
 
-export const cmdGetBaudRate = (): Uint8Array => encodeCommand(Cmd.GetBaudRate)
-
-/** `set_baudrate` (0x26); `index` is a {@link BAUD_RATES} key, not a bit rate. */
-export const cmdSetBaudRate = (index: number): Uint8Array =>
-  encodeCommand(Cmd.SetBaudRate, u16le(index))
-
 /** `set_mode` (0x12): two reserved bytes then the mode as u32. */
 export const cmdSetMode = (mode: OperatingModeValue): Uint8Array =>
   encodeCommand(Cmd.SetMode, concat(u16le(0), u32le(mode)))

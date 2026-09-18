@@ -20,8 +20,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The lower bound is the version declared in package.json engines.
-        node-version: ['20.19', '22', '24']
+        # The floor is package.json's `engines`, which Vitest 5 sets at 22.12.
+        # Vite alone would build on 20.19; the test runner would not start.
+        node-version: ['22', '24']
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +40,7 @@ jobs:
         run: npm run lint
 
       - name: Types
-        run: npx tsc -b --force
+        run: npm run typecheck
 
       - name: Tests
         run: npm run coverage

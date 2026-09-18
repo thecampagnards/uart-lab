@@ -1,8 +1,12 @@
 name: Deploy to GitHub Pages
 
+# Deploys only what CI has already passed, rather than racing it: a push that
+# breaks the tests should not reach the published demo.
 on:
-  push:
+  workflow_run:
+    workflows: ['CI']
     branches: [main]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -17,9 +21,16 @@ concurrency:
 
 jobs:
   build:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # A workflow_run event carries the default branch's ref, so the commit
+          # that actually passed has to be named explicitly.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - uses: actions/setup-node@v4
         with:

@@ -33,6 +33,8 @@ presence radar.
   descriptor you write — command bytes, block and flash sizes, status values —
   so a module this project has never seen can be reached without a code change.
 - **Serial trace** in hex, to cross-check against the protocol documentation.
+- **Light, dark or follow the system**, tracked live as the system setting
+  changes.
 - **Built-in simulated module**, to try the tool out or develop without a sensor.
 
 Everything runs on your machine: no data is sent anywhere, and there is no

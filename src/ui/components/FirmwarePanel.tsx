@@ -41,6 +41,9 @@ export function FirmwarePanel({
             items={[
               { term: 'Version', value: state.identity.firmware ?? 'unknown' },
               { term: 'Running image', value: state.firmwareInfo.active },
+              ...(state.firmwareInfo.buildId === undefined
+                ? []
+                : [{ term: 'Build', value: state.firmwareInfo.buildId, mono: true }]),
               { term: 'Target partition', value: state.firmwareInfo.partition },
             ]}
           />
