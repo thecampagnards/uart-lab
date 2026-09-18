@@ -1,3 +1,4 @@
+import { Badge, Card, Code, Group, Stack, Text, UnstyledButton } from '@mantine/core'
 import { DEVICES, type DeviceDescriptor } from '../../devices/registry'
 
 export function DeviceList({
@@ -10,25 +11,24 @@ export function DeviceList({
   connectedId: string | null
 }) {
   return (
-    <nav aria-label="Devices to configure">
-      <p className="device-list__label">My devices</p>
-      <ul className="device-list">
-        {DEVICES.map((device) => (
-          <li key={device.id}>
-            <DeviceCard
-              device={device}
-              selected={device.id === selectedId}
-              connected={device.id === connectedId}
-              onSelect={onSelect}
-            />
-          </li>
-        ))}
-      </ul>
-      <p className="stat__hint" style={{ marginTop: 12 }}>
+    <Stack gap="sm" component="nav" aria-label="Devices to configure">
+      <Text size="xs" tt="uppercase" fw={600} c="dimmed" style={{ letterSpacing: '0.08em' }}>
+        My devices
+      </Text>
+      {DEVICES.map((device) => (
+        <DeviceCard
+          key={device.id}
+          device={device}
+          selected={device.id === selectedId}
+          connected={device.id === connectedId}
+          onSelect={onSelect}
+        />
+      ))}
+      <Text size="xs" c="dimmed">
         Only one device is supported for now. The catalogue lives in{' '}
-        <code className="mono">src/devices/registry.ts</code>.
-      </p>
-    </nav>
+        <Code>src/devices/registry.ts</Code>.
+      </Text>
+    </Stack>
   )
 }
 
@@ -44,24 +44,36 @@ function DeviceCard({
   onSelect: (id: string) => void
 }) {
   return (
-    <button
-      type="button"
-      className="device-card"
-      aria-current={selected}
-      disabled={!device.implemented}
+    <UnstyledButton
       onClick={() => onSelect(device.id)}
+      disabled={!device.implemented}
+      aria-current={selected}
+      style={{ opacity: device.implemented ? 1 : 0.55 }}
     >
-      <div className="device-card__name">
-        {device.name}
-        {connected ? (
-          <span className="badge badge--good" style={{ marginLeft: 8, fontSize: 10 }}>
-            <span className="badge__dot" aria-hidden="true" />
-            connected
-          </span>
-        ) : null}
-      </div>
-      <div className="device-card__vendor">{device.vendor}</div>
-      <p className="device-card__summary">{device.summary}</p>
-    </button>
+      <Card
+        padding="sm"
+        style={{
+          borderColor: selected ? 'var(--mantine-primary-color-filled)' : undefined,
+          boxShadow: selected ? 'inset 3px 0 0 var(--mantine-primary-color-filled)' : undefined,
+        }}
+      >
+        <Group justify="space-between" wrap="nowrap" gap="xs">
+          <Text fw={650} size="sm">
+            {device.name}
+          </Text>
+          {connected ? (
+            <Badge size="xs" color="green" variant="light">
+              connected
+            </Badge>
+          ) : null}
+        </Group>
+        <Text size="xs" c="dimmed">
+          {device.vendor}
+        </Text>
+        <Text size="xs" mt={6}>
+          {device.summary}
+        </Text>
+      </Card>
+    </UnstyledButton>
   )
 }

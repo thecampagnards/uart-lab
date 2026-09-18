@@ -3,7 +3,7 @@
 ## Layers
 
 ```
-  React UI ───────────────────────────────────────────────┐
+  React UI (Mantine components, visx charts) ─────────────┐
     src/App.tsx, src/ui/**                                │
       ▲ session state, measurement snapshots              │
       │                                                   │
@@ -67,6 +67,25 @@ The UI pulls data at display rate instead of being pushed at sensor rate.
 Nothing in the shell (header, sidebar, tabs, theme) depends on the LD2420; only
 the panels do.
 
+## Front-end stack
+
+- **[Mantine](https://mantine.dev)** for the component layer: app shell, tabs,
+  number inputs, table, modal, alerts, and the colour-scheme manager. The
+  project theme (`src/theme.ts`) maps Mantine's primary colour onto the same
+  blue the charts use, so a button and a chart mark are the same hue in both
+  schemes.
+- **[visx](https://airbnb.io/visx)** for the charts: `@visx/scale` (d3 scales),
+  `@visx/axis`, `@visx/grid`, `@visx/shape`, `@visx/heatmap`, `@visx/tooltip`
+  and `@visx/responsive`. visx is headless, which is the point — the palette,
+  the mark specs and the legend rules stay under the project's control instead
+  of being whatever a charting library ships by default.
+
+Mantine owns the component surfaces; `src/styles/chart-tokens.css` owns the
+handful of values Mantine has no opinion about — the three categorical series
+slots, the sequential ramp and the recessive chart chrome. Those tokens are
+keyed off Mantine's own `data-mantine-color-scheme` attribute, so the header
+toggle drives the charts too.
+
 ## Visualisation choices
 
 - **Energy per gate** — bars on a dB axis. On a linear axis the gap between
@@ -76,9 +95,13 @@ the panels do.
 - **Distance over time** — a single series, so no legend; only the endpoint is
   labelled. Absence is a grey band, not a series colour: it is a state, not a
   measurement.
-- **Energy history** — a heatmap on a single-hue ramp (blue, light → dark),
-  drawn on canvas; 16 gates × 240 columns in SVG would cost 3,840 nodes per
-  frame.
+- **Energy history** — a heatmap on a single-hue ramp (blue, light → dark).
+  Samples are bucketed into 60 fixed time columns (`src/ui/charts/bucketSamples.ts`)
+  rather than drawn one rect per frame: it caps the node count whatever the
+  sample rate, a column that means "one slice of the window" reads better than
+  one that means "whatever arrived", and keeping the peak per bucket preserves
+  the brief gate crossings that averaging would erase. The component only takes
+  a new input twice a second, so its 960 rects stay out of the 10 Hz render path.
 
 Every chart has a table equivalent, and no information is carried by colour
 alone.

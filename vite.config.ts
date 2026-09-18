@@ -10,6 +10,18 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        // Split the vendors so a change to the app does not invalidate the
+        // component library and the charting toolkit in the browser cache.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('@mantine')) return 'mantine'
+          if (id.includes('@visx') || id.includes('/d3-')) return 'charts'
+          return 'vendor'
+        },
+      },
+    },
   },
   test: {
     globals: true,
@@ -21,7 +33,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      include: ['src/core/**', 'src/devices/**'],
+      include: ['src/core/**', 'src/devices/**', 'src/ui/charts/bucketSamples.ts'],
     },
   },
 })

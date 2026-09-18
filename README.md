@@ -67,10 +67,15 @@ src/
   devices/
     registry.ts device catalogue
     ld2420/     constants, frames, config, driver, simulator
-  hooks/        session, snapshots, theme
-  ui/           components and charts
+  hooks/        session, live snapshots
+  ui/           Mantine components and visx charts
 doc/            protocol, wiring, architecture
 ```
+
+Built with [Vite](https://vite.dev), [React](https://react.dev),
+[Mantine](https://mantine.dev) for the components and
+[visx](https://airbnb.io/visx) for the charts. Nothing below the UI depends on
+either, which is what keeps the protocol layer testable in plain Node.
 
 The details, and how to add a device, are in
 [`doc/architecture.md`](doc/architecture.md).

@@ -1,7 +1,24 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Code,
+  FileButton,
+  Group,
+  LoadingOverlay,
+  Modal,
+  NumberInput,
+  Table,
+  Text,
+  Title,
+} from '@mantine/core'
+import { useDisclosure } from '@mantine/hooks'
 import { GATE_SIZE_M, TOTAL_GATES } from '../../devices/ld2420/constants'
 import {
   cloneConfig,
+  FIELD_LIMITS,
   parseConfigFile,
   toConfigFile,
   validateConfig,
@@ -9,7 +26,7 @@ import {
 } from '../../devices/ld2420/config'
 import { linearToDb } from '../../devices/ld2420/frames'
 import type { SessionState } from '../../hooks/useLd2420Session'
-import { Badge, Card } from './primitives'
+import { gateRangeLabel } from '../charts/format'
 
 export interface ConfigPanelProps {
   state: SessionState
@@ -33,8 +50,8 @@ export function ConfigPanel({
   onError,
 }: ConfigPanelProps) {
   const draft = state.draftConfig
-  const fileInput = useRef<HTMLInputElement | null>(null)
-  const [confirmingReset, setConfirmingReset] = useState(false)
+  const resetFile = useRef<() => void>(null)
+  const [confirmOpen, confirm] = useDisclosure(false)
   const problems = validateConfig(draft)
   const problemFields = new Set(problems.map((problem) => problem.field))
   const locked = state.pendingOperation !== null || state.deviceConfig === null
@@ -69,7 +86,9 @@ export function ConfigPanel({
     URL.revokeObjectURL(url)
   }
 
-  const handleImport = async (file: File): Promise<void> => {
+  const handleImport = async (file: File | null): Promise<void> => {
+    resetFile.current?.()
+    if (!file) return
     try {
       const config = parseConfigFile(await file.text())
       onChange(() => config)
@@ -80,240 +99,267 @@ export function ConfigPanel({
 
   return (
     <>
-      <Card
-        title="General parameters"
-        subtitle="Changes stay local until you press “Write to module”."
-        actions={
-          <>
-            {state.dirty ? <Badge tone="warning">Unwritten changes</Badge> : null}
-            <button type="button" className="button" disabled={locked} onClick={onReload}>
+      <Card pos="relative">
+        <LoadingOverlay visible={state.pendingOperation !== null} zIndex={2} />
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm" mb="sm">
+          <div>
+            <Title order={2}>General parameters</Title>
+            <Text size="xs" c="dimmed">
+              Changes stay local until you press “Write to module”.
+            </Text>
+          </div>
+          <Group gap="xs">
+            {state.dirty ? (
+              <Badge color="yellow" variant="light">
+                Unwritten changes
+              </Badge>
+            ) : null}
+            <Button variant="default" size="xs" disabled={locked} onClick={onReload}>
               Re-read from module
-            </button>
-            <button
-              type="button"
-              className="button"
+            </Button>
+            <Button
+              variant="default"
+              size="xs"
               disabled={locked || !state.dirty}
               onClick={onRevert}
             >
               Discard
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
+            </Button>
+            <Button
+              size="xs"
               disabled={locked || !state.dirty || problems.length > 0}
               onClick={onApply}
             >
               Write to module
-            </button>
-          </>
-        }
-      >
+            </Button>
+          </Group>
+        </Group>
+
         {state.pendingOperation ? (
-          <p className="notice notice--info" style={{ marginBottom: 12 }} role="status">
+          <Alert variant="light" mb="sm" role="status">
             {state.pendingOperation}…
-          </p>
+          </Alert>
         ) : null}
         {problems.length > 0 ? (
-          <p className="notice notice--error" style={{ marginBottom: 12 }} role="alert">
+          <Alert color="red" variant="light" mb="sm" role="alert">
             {problems.map((problem) => problem.message).join(' ')}
-          </p>
+          </Alert>
         ) : null}
 
-        <div className="field-row">
-          <label className="field">
-            Minimum gate
-            <input
-              type="number"
-              min={0}
-              max={TOTAL_GATES - 1}
-              step={1}
-              value={draft.minGate}
-              disabled={locked}
-              aria-invalid={problemFields.has('minGate')}
-              onChange={(event) => setField('minGate', toInt(event.target.value))}
-            />
-          </label>
-          <label className="field">
-            Maximum gate
-            <input
-              type="number"
-              min={0}
-              max={TOTAL_GATES - 1}
-              step={1}
-              value={draft.maxGate}
-              disabled={locked}
-              aria-invalid={problemFields.has('maxGate')}
-              onChange={(event) => setField('maxGate', toInt(event.target.value))}
-            />
-          </label>
-          <label className="field">
-            Absence delay (s)
-            <input
-              type="number"
-              min={0}
-              max={65535}
-              step={1}
-              value={draft.timeoutS}
-              disabled={locked}
-              aria-invalid={problemFields.has('timeoutS')}
-              onChange={(event) => setField('timeoutS', toInt(event.target.value))}
-            />
-          </label>
-          <p className="stat__hint" style={{ maxWidth: 320 }}>
+        <Group align="flex-start" gap="md" wrap="wrap">
+          <NumberInput
+            label="Minimum gate"
+            size="sm"
+            w={130}
+            min={FIELD_LIMITS.gate.min}
+            max={FIELD_LIMITS.gate.max}
+            allowDecimal={false}
+            allowNegative={false}
+            value={draft.minGate}
+            disabled={locked}
+            error={problemFields.has('minGate')}
+            onChange={(value) => setField('minGate', toInt(value))}
+          />
+          <NumberInput
+            label="Maximum gate"
+            size="sm"
+            w={130}
+            min={FIELD_LIMITS.gate.min}
+            max={FIELD_LIMITS.gate.max}
+            allowDecimal={false}
+            allowNegative={false}
+            value={draft.maxGate}
+            disabled={locked}
+            error={problemFields.has('maxGate')}
+            onChange={(value) => setField('maxGate', toInt(value))}
+          />
+          <NumberInput
+            label="Absence delay (s)"
+            size="sm"
+            w={150}
+            min={FIELD_LIMITS.timeoutS.min}
+            max={FIELD_LIMITS.timeoutS.max}
+            allowDecimal={false}
+            allowNegative={false}
+            value={draft.timeoutS}
+            disabled={locked}
+            error={problemFields.has('timeoutS')}
+            onChange={(value) => setField('timeoutS', toInt(value))}
+          />
+          <Text size="xs" c="dimmed" maw={320} mt="xl">
             Monitored range:{' '}
-            <strong>
+            <Text span fw={650} inherit>
               {(draft.minGate * GATE_SIZE_M).toFixed(1)} –{' '}
               {((draft.maxGate + 1) * GATE_SIZE_M).toFixed(1)} m
-            </strong>
+            </Text>
             . The delay holds the “present” state for that many seconds after the last detection.
-          </p>
-        </div>
+          </Text>
+        </Group>
       </Card>
 
-      <Card
-        title="Per-gate thresholds"
-        subtitle="Motion threshold: fires the detection. Still threshold: holds detection on a stationary target. Raw values are 0–65535; the dB column matches the scale used by the Hi-Link tool."
-        actions={
-          <>
-            <button type="button" className="button" onClick={handleExport}>
+      <Card pos="relative">
+        <LoadingOverlay visible={state.pendingOperation !== null} zIndex={2} />
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm" mb="sm">
+          <div style={{ maxWidth: 560 }}>
+            <Title order={2}>Per-gate thresholds</Title>
+            <Text size="xs" c="dimmed">
+              Motion threshold: fires the detection. Still threshold: holds detection on a
+              stationary target. Raw values are 0–65535; the dB column matches the scale used by the
+              Hi-Link tool.
+            </Text>
+          </div>
+          <Group gap="xs">
+            <Button variant="default" size="xs" onClick={handleExport}>
               Export as JSON
-            </button>
-            <button
-              type="button"
-              className="button"
-              disabled={locked}
-              onClick={() => fileInput.current?.click()}
-            >
-              Import…
-            </button>
-            <input
-              ref={fileInput}
-              type="file"
+            </Button>
+            <FileButton
+              resetRef={resetFile}
               accept="application/json,.json"
-              className="visually-hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) void handleImport(file)
-                event.target.value = ''
-              }}
-            />
-          </>
-        }
-      >
-        <div className="table-wrap">
-          <table className="data">
-            <caption className="visually-hidden">Detection thresholds per distance gate</caption>
-            <thead>
-              <tr>
-                <th scope="col">Gate</th>
-                <th scope="col">Distance</th>
-                <th scope="col">Motion threshold</th>
-                <th scope="col">dB</th>
-                <th scope="col">Still threshold</th>
-                <th scope="col">dB</th>
-              </tr>
-            </thead>
-            <tbody>
+              onChange={(file) => void handleImport(file)}
+            >
+              {(props) => (
+                <Button variant="default" size="xs" disabled={locked} {...props}>
+                  Import…
+                </Button>
+              )}
+            </FileButton>
+          </Group>
+        </Group>
+
+        <Table.ScrollContainer minWidth={640}>
+          <Table withTableBorder highlightOnHover>
+            <Table.Caption>Detection thresholds per distance gate</Table.Caption>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Gate</Table.Th>
+                <Table.Th>Distance</Table.Th>
+                <Table.Th>Motion threshold</Table.Th>
+                <Table.Th ta="right">dB</Table.Th>
+                <Table.Th>Still threshold</Table.Th>
+                <Table.Th ta="right">dB</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody style={{ fontVariantNumeric: 'tabular-nums' }}>
               {Array.from({ length: TOTAL_GATES }, (_, gate) => {
                 const inRange = gate >= draft.minGate && gate <= draft.maxGate
                 const move = draft.moveThresholds[gate] ?? 0
                 const still = draft.stillThresholds[gate] ?? 0
                 return (
-                  <tr key={gate} className={inRange ? undefined : 'row-out-of-range'}>
-                    <th scope="row">{gate}</th>
-                    <td>
-                      {(gate * GATE_SIZE_M).toFixed(1)}–{((gate + 1) * GATE_SIZE_M).toFixed(1)} m
-                    </td>
-                    <td className="numeric-input">
-                      <input
-                        type="number"
-                        min={0}
-                        max={65535}
-                        step={1}
+                  <Table.Tr key={gate} opacity={inRange ? 1 : 0.55}>
+                    <Table.Th scope="row">{gate}</Table.Th>
+                    <Table.Td>{gateRangeLabel(gate, GATE_SIZE_M)}</Table.Td>
+                    <Table.Td>
+                      <ThresholdInput
+                        label={`Motion threshold, gate ${gate}`}
                         value={move}
                         disabled={locked}
-                        aria-label={`Motion threshold, gate ${gate}`}
-                        aria-invalid={problemFields.has(`moveThresholds.${gate}`)}
-                        onChange={(event) =>
-                          setThreshold('moveThresholds', gate, toInt(event.target.value))
-                        }
+                        invalid={problemFields.has(`moveThresholds.${gate}`)}
+                        onChange={(value) => setThreshold('moveThresholds', gate, value)}
                       />
-                    </td>
-                    <td>{linearToDb(move).toFixed(1)}</td>
-                    <td className="numeric-input">
-                      <input
-                        type="number"
-                        min={0}
-                        max={65535}
-                        step={1}
+                    </Table.Td>
+                    <Table.Td ta="right">{linearToDb(move).toFixed(1)}</Table.Td>
+                    <Table.Td>
+                      <ThresholdInput
+                        label={`Still threshold, gate ${gate}`}
                         value={still}
                         disabled={locked}
-                        aria-label={`Still threshold, gate ${gate}`}
-                        aria-invalid={problemFields.has(`stillThresholds.${gate}`)}
-                        onChange={(event) =>
-                          setThreshold('stillThresholds', gate, toInt(event.target.value))
-                        }
+                        invalid={problemFields.has(`stillThresholds.${gate}`)}
+                        onChange={(value) => setThreshold('stillThresholds', gate, value)}
                       />
-                    </td>
-                    <td>{linearToDb(still).toFixed(1)}</td>
-                  </tr>
+                    </Table.Td>
+                    <Table.Td ta="right">{linearToDb(still).toFixed(1)}</Table.Td>
+                  </Table.Tr>
                 )
               })}
-            </tbody>
-          </table>
-        </div>
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
       </Card>
 
-      <Card title="Module actions" subtitle="These act on the device immediately.">
-        <div className="button-row">
-          <button type="button" className="button" disabled={locked} onClick={onReboot}>
+      <Card>
+        <Title order={2}>Module actions</Title>
+        <Text size="xs" c="dimmed" mb="sm">
+          These act on the device immediately.
+        </Text>
+        <Group gap="xs">
+          <Button variant="default" size="xs" disabled={locked} onClick={onReboot}>
             Restart module
-          </button>
-          {confirmingReset ? (
-            <>
-              <span className="stat__hint">Replace every threshold with the factory values?</span>
-              <button
-                type="button"
-                className="button button--danger"
-                disabled={locked}
-                onClick={() => {
-                  setConfirmingReset(false)
-                  onFactoryReset()
-                }}
-              >
-                Confirm
-              </button>
-              <button
-                type="button"
-                className="button button--ghost"
-                onClick={() => setConfirmingReset(false)}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="button button--danger"
-              disabled={locked}
-              onClick={() => setConfirmingReset(true)}
-            >
-              Factory defaults…
-            </button>
-          )}
-        </div>
-        <p className="stat__hint" style={{ marginTop: 10 }}>
+          </Button>
+          <Button color="red" variant="outline" size="xs" disabled={locked} onClick={confirm.open}>
+            Factory defaults…
+          </Button>
+        </Group>
+        <Text size="xs" c="dimmed" mt="sm">
           Baud rate changes and firmware updates are not exposed: the upgrade command{' '}
-          <code className="mono">0x74</code> leaves the module unusable if the transfer does not
-          complete.
-        </p>
+          <Code>0x74</Code> leaves the module unusable if the transfer does not complete.
+        </Text>
       </Card>
+
+      <Modal
+        opened={confirmOpen}
+        onClose={confirm.close}
+        title="Restore factory defaults?"
+        centered
+      >
+        <Text size="sm">
+          Every threshold, the gate range and the absence delay will be replaced with the values
+          from the factory table. The module keeps running; nothing is erased beyond these
+          parameters.
+        </Text>
+        <Group justify="flex-end" mt="md">
+          <Button variant="default" onClick={confirm.close}>
+            Cancel
+          </Button>
+          <Button
+            color="red"
+            onClick={() => {
+              confirm.close()
+              onFactoryReset()
+            }}
+          >
+            Restore
+          </Button>
+        </Group>
+      </Modal>
     </>
   )
 }
 
+function ThresholdInput({
+  label,
+  value,
+  disabled,
+  invalid,
+  onChange,
+}: {
+  label: string
+  value: number
+  disabled: boolean
+  invalid: boolean
+  onChange: (value: number) => void
+}) {
+  return (
+    <NumberInput
+      aria-label={label}
+      size="xs"
+      w={110}
+      hideControls
+      min={FIELD_LIMITS.threshold.min}
+      max={FIELD_LIMITS.threshold.max}
+      allowDecimal={false}
+      allowNegative={false}
+      thousandSeparator=","
+      value={value}
+      disabled={disabled}
+      error={invalid}
+      onChange={(next) => onChange(toInt(next))}
+      styles={{ input: { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } }}
+    />
+  )
+}
+
 /** Keeps an emptied field from becoming NaN and poisoning the draft. */
-function toInt(value: string): number {
-  const parsed = Number.parseInt(value, 10)
-  return Number.isNaN(parsed) ? 0 : parsed
+function toInt(value: string | number): number {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : 0
 }

@@ -7,7 +7,7 @@
  * here rather than in front of the person holding the sensor.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 
@@ -42,7 +42,9 @@ describe('App', () => {
 
     // Identity comes back from the simulated module.
     expect(await screen.findByText('v1.6.1')).toBeInTheDocument()
-    expect(screen.getByText('Simulated demo', { selector: '.badge' })).toBeInTheDocument()
+    // Once connected the "Simulated demo" button is replaced by "Disconnect",
+    // so the only remaining occurrence is the status badge.
+    expect(screen.getByText('Simulated demo')).toBeInTheDocument()
 
     // The live panel picks up the report stream.
     await waitFor(
@@ -54,7 +56,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Configuration' }))
     const timeout = screen.getByLabelText(/Absence delay/)
-    expect(timeout).toHaveValue(30)
+    expect(timeout).toHaveValue('30')
 
     await user.clear(timeout)
     await user.type(timeout, '45')
@@ -67,7 +69,7 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.queryByText('Unwritten changes')).not.toBeInTheDocument()
     })
-    expect(screen.getByLabelText(/Absence delay/)).toHaveValue(45)
+    expect(screen.getByLabelText(/Absence delay/)).toHaveValue('45')
   }, 20_000)
 
   it('refuses to write an out-of-range gate and says why', async () => {
@@ -81,8 +83,8 @@ describe('App', () => {
     await user.clear(minGate)
     await user.type(minGate, '14')
 
-    const alert = await screen.findByRole('alert')
-    expect(within(alert).getByText(/less than or equal/)).toBeInTheDocument()
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts.some((node) => /less than or equal/.test(node.textContent ?? ''))).toBe(true)
     expect(screen.getByRole('button', { name: 'Write to module' })).toBeDisabled()
   }, 20_000)
 

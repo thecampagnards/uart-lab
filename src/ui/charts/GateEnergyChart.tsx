@@ -6,15 +6,24 @@
  * on a linear axis every gate past the third is a flat line at zero. dB is also
  * what the vendor tool displays, so the numbers here match its screenshots.
  */
-import { useId, useState } from 'react'
+import { Group } from '@visx/group'
+import { GridRows } from '@visx/grid'
+import { AxisBottom, AxisLeft } from '@visx/axis'
+import { Bar, Line } from '@visx/shape'
+import { scaleBand, scaleLinear } from '@visx/scale'
+import { ParentSize } from '@visx/responsive'
+import { TooltipWithBounds, useTooltip } from '@visx/tooltip'
 import { GATE_SIZE_M, TOTAL_GATES } from '../../devices/ld2420/constants'
 import { linearToDb } from '../../devices/ld2420/frames'
-import { clamp, formatNumber, linearScale, niceTicks } from './scales'
-import { Legend, Tooltip } from './Tooltip'
+import { CHROME, SERIES, axisLabelProps, tickLabelProps, tooltipStyles } from './chartTheme'
+import { clamp, formatNumber, gateRangeLabel } from './format'
+import { ChartLegend, TooltipRows } from './ChartChrome'
 
-const WIDTH = 720
+/** Width used for the very first paint, before the container is measured. */
+const INITIAL_WIDTH = 640
+
 const HEIGHT = 260
-const MARGIN = { top: 12, right: 14, bottom: 34, left: 40 }
+const MARGIN = { top: 10, right: 12, bottom: 38, left: 42 }
 const MAX_DB = 50
 
 export interface GateEnergyChartProps {
@@ -25,174 +34,171 @@ export interface GateEnergyChartProps {
   maxGate: number
 }
 
-export function GateEnergyChart({
+interface HoverDatum {
+  gate: number
+  energy: number
+  move: number
+  still: number
+  inRange: boolean
+}
+
+export function GateEnergyChart(props: GateEnergyChartProps) {
+  return (
+    <div>
+      <ChartLegend
+        items={[
+          { label: 'Measured energy', color: SERIES.energy },
+          { label: 'Motion threshold', color: SERIES.move, line: true },
+          { label: 'Still threshold', color: SERIES.still, line: true },
+        ]}
+      />
+      <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height: HEIGHT }}>
+        {({ width }) => (width > 0 ? <Plot {...props} width={width} /> : null)}
+      </ParentSize>
+    </div>
+  )
+}
+
+function Plot({
   energy,
   moveThresholds,
   stillThresholds,
   minGate,
   maxGate,
-}: GateEnergyChartProps) {
-  const [hover, setHover] = useState<number | null>(null)
-  const clipId = useId()
+  width,
+}: GateEnergyChartProps & { width: number }) {
+  const { tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip, tooltipOpen } =
+    useTooltip<HoverDatum>()
 
-  const plotWidth = WIDTH - MARGIN.left - MARGIN.right
-  const plotHeight = HEIGHT - MARGIN.top - MARGIN.bottom
-  const x = linearScale([0, TOTAL_GATES], [0, plotWidth])
-  const y = linearScale([0, MAX_DB], [plotHeight, 0])
-  const bandWidth = plotWidth / TOTAL_GATES
-  // A 2px surface gap between neighbouring bars, per the mark spec.
-  const barWidth = Math.max(4, bandWidth - 8)
+  const innerWidth = Math.max(0, width - MARGIN.left - MARGIN.right)
+  const innerHeight = HEIGHT - MARGIN.top - MARGIN.bottom
 
-  const hovered = hover !== null ? hover : null
-  const hoveredEnergy = hovered !== null ? (energy[hovered] ?? 0) : 0
+  const gates = Array.from({ length: TOTAL_GATES }, (_, gate) => gate)
+  // `padding` is what produces the surface gap between neighbouring bars.
+  const x = scaleBand<number>({ domain: gates, range: [0, innerWidth], padding: 0.22 })
+  const y = scaleLinear<number>({ domain: [0, MAX_DB], range: [innerHeight, 0] })
+
+  const bandWidth = x.bandwidth()
 
   return (
-    <div className="chart">
-      <Legend
-        items={[
-          { label: 'Measured energy', color: 'var(--series-1)' },
-          { label: 'Motion threshold', color: 'var(--series-2)', line: true },
-          { label: 'Still threshold', color: 'var(--series-3)', line: true },
-        ]}
-      />
-      <div className="chart__plot">
-        <svg
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          role="img"
-          aria-label="Energy per distance gate, against the configured thresholds. The numeric values are in the table below the chart."
-          onMouseLeave={() => setHover(null)}
-        >
-          <defs>
-            <clipPath id={clipId}>
-              <rect x={0} y={-4} width={plotWidth} height={plotHeight + 4} />
-            </clipPath>
-          </defs>
-          <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
-            {niceTicks(0, MAX_DB, 5).map((tick) => (
-              <g key={tick}>
-                <line className="chart__grid" x1={0} x2={plotWidth} y1={y(tick)} y2={y(tick)} />
-                <text className="chart__tick" x={-8} y={y(tick)} dy="0.32em" textAnchor="end">
-                  {tick}
-                </text>
-              </g>
-            ))}
-            <text
-              className="chart__axis-label"
-              transform={`translate(${-MARGIN.left + 2},${plotHeight / 2}) rotate(-90)`}
-              textAnchor="middle"
-            >
-              dB
-            </text>
+    <div style={{ position: 'relative' }}>
+      <svg
+        width={width}
+        height={HEIGHT}
+        role="img"
+        aria-label="Energy per distance gate, against the configured thresholds. The numeric values are in the table below the chart."
+      >
+        <Group left={MARGIN.left} top={MARGIN.top}>
+          <GridRows scale={y} width={innerWidth} numTicks={5} stroke={CHROME.grid} />
 
-            <g clipPath={`url(#${clipId})`}>
-              {Array.from({ length: TOTAL_GATES }, (_, gate) => {
-                const inRange = gate >= minGate && gate <= maxGate
-                const db = clamp(linearToDb(energy[gate] ?? 0), 0, MAX_DB)
-                const barX = x(gate) + (bandWidth - barWidth) / 2
-                const barY = y(db)
-                const height = Math.max(0, plotHeight - barY)
-                return (
-                  <g key={gate}>
-                    {/* Hit area spans the whole band so the target is ~40px wide. */}
-                    <rect
-                      x={x(gate)}
-                      y={0}
-                      width={bandWidth}
-                      height={plotHeight}
-                      fill="transparent"
-                      onMouseEnter={() => setHover(gate)}
-                      onFocus={() => setHover(gate)}
-                      onBlur={() => setHover(null)}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={`Gate ${gate}, ${formatNumber(energy[gate] ?? 0)}`}
-                    />
-                    <rect
-                      x={barX}
-                      y={barY}
-                      width={barWidth}
-                      height={height}
-                      rx={Math.min(4, barWidth / 2)}
-                      fill="var(--series-1)"
-                      opacity={inRange ? 1 : 0.28}
-                    />
-                    {/* Thresholds as ticks rather than bars: they bound the bar, they are not a second magnitude. */}
-                    <ThresholdTick
-                      value={moveThresholds[gate]}
-                      color="var(--series-2)"
-                      x={barX - 3}
-                      width={barWidth + 6}
-                      y={y}
-                    />
-                    <ThresholdTick
-                      value={stillThresholds[gate]}
-                      color="var(--series-3)"
-                      x={barX - 3}
-                      width={barWidth + 6}
-                      y={y}
-                    />
-                  </g>
-                )
-              })}
-            </g>
+          {gates.map((gate) => {
+            const left = x(gate) ?? 0
+            const inRange = gate >= minGate && gate <= maxGate
+            const raw = energy[gate] ?? 0
+            const db = clamp(linearToDb(raw), 0, MAX_DB)
+            const move = moveThresholds[gate] ?? 0
+            const still = stillThresholds[gate] ?? 0
+            const datum: HoverDatum = { gate, energy: raw, move, still, inRange }
 
-            <line
-              className="chart__baseline"
-              x1={0}
-              x2={plotWidth}
-              y1={plotHeight}
-              y2={plotHeight}
-            />
-            {Array.from({ length: TOTAL_GATES }, (_, gate) => (
-              <text
-                key={gate}
-                className="chart__tick"
-                x={x(gate) + bandWidth / 2}
-                y={plotHeight + 14}
-                textAnchor="middle"
-              >
-                {gate}
-              </text>
-            ))}
-            <text
-              className="chart__axis-label"
-              x={plotWidth / 2}
-              y={plotHeight + 30}
-              textAnchor="middle"
-            >
-              Gate (≈ {GATE_SIZE_M.toLocaleString('en-US')} m per gate)
-            </text>
-          </g>
-        </svg>
+            return (
+              <Group key={gate}>
+                <Bar
+                  x={left}
+                  y={y(db)}
+                  width={bandWidth}
+                  height={Math.max(0, innerHeight - y(db))}
+                  rx={Math.min(4, bandWidth / 2)}
+                  fill={SERIES.energy}
+                  opacity={inRange ? 1 : 0.28}
+                />
+                {/* Thresholds are ticks bounding the bar, not a second magnitude. */}
+                <ThresholdTick value={move} color={SERIES.move} x={left} width={bandWidth} y={y} />
+                <ThresholdTick
+                  value={still}
+                  color={SERIES.still}
+                  x={left}
+                  width={bandWidth}
+                  y={y}
+                />
+                {/* Hit area spans the whole band, so the target is far wider than the bar. */}
+                <Bar
+                  x={left - (x.step() - bandWidth) / 2}
+                  y={0}
+                  width={x.step()}
+                  height={innerHeight}
+                  fill="transparent"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Gate ${gate}, energy ${formatNumber(raw)}`}
+                  onMouseMove={() =>
+                    showTooltip({
+                      tooltipData: datum,
+                      tooltipLeft: MARGIN.left + left + bandWidth / 2,
+                      tooltipTop: MARGIN.top + y(db),
+                    })
+                  }
+                  onFocus={() =>
+                    showTooltip({
+                      tooltipData: datum,
+                      tooltipLeft: MARGIN.left + left + bandWidth / 2,
+                      tooltipTop: MARGIN.top + y(db),
+                    })
+                  }
+                  onMouseLeave={hideTooltip}
+                  onBlur={hideTooltip}
+                />
+              </Group>
+            )
+          })}
 
-        {hovered !== null ? (
-          <Tooltip
-            left={`${clamp(((MARGIN.left + x(hovered) + bandWidth / 2) / WIDTH) * 100, 12, 88)}%`}
-            top={`${((MARGIN.top + y(clamp(linearToDb(hoveredEnergy), 0, MAX_DB))) / HEIGHT) * 100}%`}
-            title={`Gate ${hovered} · ${(hovered * GATE_SIZE_M).toFixed(1)}–${((hovered + 1) * GATE_SIZE_M).toFixed(1)} m`}
+          <AxisLeft
+            scale={y}
+            numTicks={5}
+            hideAxisLine
+            hideTicks
+            label="dB"
+            labelProps={axisLabelProps}
+            labelOffset={22}
+            tickLabelProps={() => ({ ...tickLabelProps, textAnchor: 'end', dx: -4, dy: 3 })}
+          />
+          <AxisBottom
+            top={innerHeight}
+            scale={x}
+            stroke={CHROME.axis}
+            hideTicks
+            label={`Gate (≈ ${GATE_SIZE_M} m per gate)`}
+            labelProps={{ ...axisLabelProps, textAnchor: 'middle' }}
+            labelOffset={12}
+            tickLabelProps={() => ({ ...tickLabelProps, textAnchor: 'middle', dy: 2 })}
+          />
+        </Group>
+      </svg>
+
+      {tooltipOpen && tooltipData ? (
+        <TooltipWithBounds top={tooltipTop ?? 0} left={tooltipLeft ?? 0} style={tooltipStyles}>
+          <TooltipRows
+            title={`Gate ${tooltipData.gate} · ${gateRangeLabel(tooltipData.gate, GATE_SIZE_M)}`}
             rows={[
               {
                 label: 'Energy',
-                value: `${formatNumber(hoveredEnergy)} (${linearToDb(hoveredEnergy).toFixed(1)} dB)`,
-                color: 'var(--series-1)',
+                value: `${formatNumber(tooltipData.energy)} (${linearToDb(tooltipData.energy).toFixed(1)} dB)`,
+                color: SERIES.energy,
               },
               {
                 label: 'Motion threshold',
-                value: formatNumber(moveThresholds[hovered] ?? 0),
-                color: 'var(--series-2)',
+                value: formatNumber(tooltipData.move),
+                color: SERIES.move,
               },
               {
                 label: 'Still threshold',
-                value: formatNumber(stillThresholds[hovered] ?? 0),
-                color: 'var(--series-3)',
+                value: formatNumber(tooltipData.still),
+                color: SERIES.still,
               },
             ]}
-            footer={
-              hovered < minGate || hovered > maxGate ? 'Outside the active gate range' : undefined
-            }
+            footer={tooltipData.inRange ? undefined : 'Outside the active gate range'}
           />
-        ) : null}
-      </div>
+        </TooltipWithBounds>
+      ) : null}
     </div>
   )
 }
@@ -204,13 +210,19 @@ function ThresholdTick({
   width,
   y,
 }: {
-  value: number | undefined
+  value: number
   color: string
   x: number
   width: number
   y: (value: number) => number
 }) {
-  if (value === undefined) return null
   const db = clamp(linearToDb(value), 0, MAX_DB)
-  return <line x1={x} x2={x + width} y1={y(db)} y2={y(db)} stroke={color} strokeWidth={2} />
+  return (
+    <Line
+      from={{ x: x - 2, y: y(db) }}
+      to={{ x: x + width + 2, y: y(db) }}
+      stroke={color}
+      strokeWidth={2}
+    />
+  )
 }

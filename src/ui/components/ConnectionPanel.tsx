@@ -1,9 +1,21 @@
 import { useState } from 'react'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Code,
+  Group,
+  NativeSelect,
+  Stack,
+  Text,
+  Title,
+} from '@mantine/core'
 import { isWebSerialSupported } from '../../core/transport'
 import { OPERATING_MODE_LABELS } from '../../devices/ld2420/constants'
 import type { DeviceDescriptor } from '../../devices/registry'
 import type { SessionState } from '../../hooks/useLd2420Session'
-import { Badge, Card } from './primitives'
+import { DefinitionList } from './primitives'
 
 export function ConnectionPanel({
   device,
@@ -23,11 +35,19 @@ export function ConnectionPanel({
   const connected = state.status === 'connected' || state.status === 'busy'
 
   return (
-    <Card
-      title="Connection"
-      subtitle="The browser opens the serial port through the Web Serial API. No data leaves your machine."
-      actions={
-        <Badge tone={connected ? 'good' : state.status === 'connecting' ? 'warning' : 'neutral'}>
+    <Card>
+      <Group justify="space-between" align="flex-start" wrap="nowrap" mb="sm">
+        <div>
+          <Title order={2}>Connection</Title>
+          <Text size="xs" c="dimmed">
+            The browser opens the serial port through the Web Serial API. No data leaves your
+            machine.
+          </Text>
+        </div>
+        <Badge
+          variant="light"
+          color={connected ? 'green' : state.status === 'connecting' ? 'yellow' : 'gray'}
+        >
           {connected
             ? state.transportKind === 'simulated'
               ? 'Simulated demo'
@@ -36,81 +56,78 @@ export function ConnectionPanel({
               ? 'Connecting…'
               : 'Disconnected'}
         </Badge>
-      }
-    >
+      </Group>
+
       {!supported ? (
-        <p className="notice notice--warning" style={{ marginBottom: 12 }}>
+        <Alert color="yellow" variant="light" mb="sm">
           This browser does not expose the Web Serial API. Use Chrome, Edge or Opera on desktop — or
           start the simulated demo below to explore the interface.
-        </p>
+        </Alert>
       ) : null}
 
-      <div className="field-row">
-        <label className="field">
-          Baud rate
-          <select
-            value={baudRate}
-            disabled={connected}
-            onChange={(event) => setBaudRate(Number(event.target.value))}
-          >
-            {device.supportedBaudRates.map((rate) => (
-              <option key={rate} value={rate}>
-                {rate.toLocaleString('en-US')} baud
-                {rate === 115200
-                  ? ' (default on fw ≥ 1.5.8)'
-                  : rate === 256000
-                    ? ' (default on fw < 1.5.8)'
-                    : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+      <Group align="flex-end" gap="sm">
+        <NativeSelect
+          label="Baud rate"
+          size="sm"
+          value={String(baudRate)}
+          disabled={connected}
+          onChange={(event) => setBaudRate(Number(event.currentTarget.value))}
+          data={device.supportedBaudRates.map((rate) => ({
+            value: String(rate),
+            label: `${rate.toLocaleString('en-US')} baud${
+              rate === 115200
+                ? ' (default on fw ≥ 1.5.8)'
+                : rate === 256000
+                  ? ' (default on fw < 1.5.8)'
+                  : ''
+            }`,
+          }))}
+        />
 
         {connected ? (
-          <button type="button" className="button" onClick={onDisconnect}>
+          <Button variant="default" onClick={onDisconnect}>
             Disconnect
-          </button>
+          </Button>
         ) : (
           <>
-            <button
-              type="button"
-              className="button button--primary"
+            <Button
               disabled={!supported || state.status === 'connecting'}
               onClick={() => onConnectSerial(baudRate)}
             >
               Choose a serial port…
-            </button>
-            <button
-              type="button"
-              className="button"
+            </Button>
+            <Button
+              variant="default"
               disabled={state.status === 'connecting'}
               onClick={onConnectSimulator}
             >
               Simulated demo
-            </button>
+            </Button>
           </>
         )}
-      </div>
+      </Group>
 
       {connected ? (
-        <dl className="dl" style={{ marginTop: 14 }}>
-          <dt>Port</dt>
-          <dd>{state.portLabel ?? '—'}</dd>
-          <dt>Baud rate</dt>
-          <dd>{state.baudRate.toLocaleString('en-US')} baud · 8N1</dd>
-          <dt>Firmware</dt>
-          <dd>{state.identity.firmware ?? 'unknown'}</dd>
-          <dt>Serial number</dt>
-          <dd className="mono">{state.identity.serial ?? '—'}</dd>
-          <dt>Mode</dt>
-          <dd>{OPERATING_MODE_LABELS[state.mode]}</dd>
-        </dl>
+        <DefinitionList
+          mt="md"
+          items={[
+            { term: 'Port', value: state.portLabel ?? '—' },
+            { term: 'Baud rate', value: `${state.baudRate.toLocaleString('en-US')} baud · 8N1` },
+            { term: 'Firmware', value: state.identity.firmware ?? 'unknown' },
+            { term: 'Serial number', value: state.identity.serial ?? '—', mono: true },
+            { term: 'Mode', value: OPERATING_MODE_LABELS[state.mode] },
+          ]}
+        />
       ) : (
-        <p className="stat__hint" style={{ marginTop: 12 }}>
-          FT232RL wiring: <code className="mono">TX→RX</code>, <code className="mono">RX→OT1</code>,{' '}
-          <code className="mono">GND→GND</code>, <code className="mono">3V3→3V3</code>. The module
-          is a 3.3 V part — powering it from 5 V destroys it.
-        </p>
+        <Stack gap={4} mt="md">
+          <Text size="xs" c="dimmed">
+            FT232RL wiring: <Code>TX→RX</Code>, <Code>RX→OT1</Code>, <Code>GND→GND</Code>,{' '}
+            <Code>3V3→3V3</Code>.
+          </Text>
+          <Text size="xs" c="dimmed">
+            The module is a 3.3 V part — powering it from 5 V destroys it.
+          </Text>
+        </Stack>
       )}
     </Card>
   )

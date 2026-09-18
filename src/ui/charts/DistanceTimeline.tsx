@@ -1,42 +1,77 @@
 /**
- * Detected distance over the last minute, with absence shown as a recessive
+ * Detected distance over the recent window, with absence shown as a recessive
  * band rather than a second colour series — presence is state, not magnitude.
  */
-import { useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo } from 'react'
+import { Group } from '@visx/group'
+import { GridRows } from '@visx/grid'
+import { AxisLeft } from '@visx/axis'
+import { AreaClosed, Bar, Line, LinePath } from '@visx/shape'
+import { scaleLinear } from '@visx/scale'
+import { ParentSize } from '@visx/responsive'
+import { LinearGradient } from '@visx/gradient'
+import { TooltipWithBounds, useTooltip } from '@visx/tooltip'
+import { localPoint } from '@visx/event'
+import { bisector, extent } from 'd3-array'
 import { downsampleMinMax } from '../../core/history'
 import type { Measurement } from '../../devices/ld2420/driver'
-import { clamp, linearScale, nearestIndex, niceDomain, niceTicks } from './scales'
-import { Tooltip } from './Tooltip'
+import { CHROME, SERIES, axisLabelProps, tickLabelProps, tooltipStyles } from './chartTheme'
+import { clamp } from './format'
+import { TooltipRows } from './ChartChrome'
 
-const WIDTH = 720
+/** Width used for the very first paint, before the container is measured. */
+const INITIAL_WIDTH = 640
+
 const HEIGHT = 220
-const MARGIN = { top: 12, right: 14, bottom: 30, left: 46 }
+const MARGIN = { top: 10, right: 12, bottom: 26, left: 46 }
 const MAX_POINTS = 360
+
+interface Point {
+  t: number
+  /** Distance in metres; the wire carries centimetres. */
+  value: number
+}
+
+const bisectByT = bisector<Point, number>((point) => point.t)
+/** d3's bisector exposes `center` as a bound method; wrap it to keep `this` out of it. */
+const bisectT = (points: Point[], t: number): number => bisectByT.center(points, t)
 
 export interface DistanceTimelineProps {
   samples: readonly Measurement[]
   windowMs: number
 }
 
-export function DistanceTimeline({ samples, windowMs }: DistanceTimelineProps) {
-  const [hoverT, setHoverT] = useState<number | null>(null)
-  const svgRef = useRef<SVGSVGElement | null>(null)
-  const gradientId = useId()
+export function DistanceTimeline(props: DistanceTimelineProps) {
+  return (
+    <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height: HEIGHT }}>
+      {({ width }) => (width > 0 ? <Plot {...props} width={width} /> : null)}
+    </ParentSize>
+  )
+}
 
-  const plotWidth = WIDTH - MARGIN.left - MARGIN.right
-  const plotHeight = HEIGHT - MARGIN.top - MARGIN.bottom
+function Plot({ samples, windowMs, width }: DistanceTimelineProps & { width: number }) {
+  const { tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip, tooltipOpen } =
+    useTooltip<{ point: Point; presence: boolean; agoS: number }>()
 
-  const { points, absences, x, y, yTicks, latestT } = useMemo(() => {
+  const innerWidth = Math.max(0, width - MARGIN.left - MARGIN.right)
+  const innerHeight = HEIGHT - MARGIN.top - MARGIN.bottom
+
+  const { points, absences, latestT, x, y } = useMemo(() => {
     const latest = samples.at(-1)?.t ?? 0
-    const t0 = latest - windowMs
-    const reduced = downsampleMinMax(samples, MAX_POINTS).map((p) => ({
+    const reduced: Point[] = downsampleMinMax(samples, MAX_POINTS).map((p) => ({
       t: p.t,
-      value: p.value / 100, // centimetres on the wire, metres on the axis
+      value: p.value / 100,
     }))
-    const maxValue = reduced.reduce((max, p) => Math.max(max, p.value), 0)
-    const domain = niceDomain(0, Math.max(1, maxValue), 4)
-    const xScale = linearScale([t0, latest || 1], [0, plotWidth])
-    const yScale = linearScale(domain, [plotHeight, 0])
+    const [, maxValue] = extent(reduced, (p) => p.value)
+    const xScale = scaleLinear<number>({
+      domain: [latest - windowMs, latest || 1],
+      range: [0, innerWidth],
+    })
+    const yScale = scaleLinear<number>({
+      domain: [0, Math.max(1, maxValue ?? 1)],
+      range: [innerHeight, 0],
+      nice: true,
+    })
 
     // Contiguous runs where the module reported no presence.
     const bands: { from: number; to: number }[] = []
@@ -50,177 +85,187 @@ export function DistanceTimeline({ samples, windowMs }: DistanceTimelineProps) {
     }
     if (start !== null) bands.push({ from: start, to: latest })
 
-    return {
-      points: reduced,
-      absences: bands,
-      x: xScale,
-      y: yScale,
-      yTicks: niceTicks(domain[0], domain[1], 4),
-      latestT: latest,
-    }
-  }, [plotHeight, plotWidth, samples, windowMs])
+    return { points: reduced, absences: bands, latestT: latest, x: xScale, y: yScale }
+  }, [innerHeight, innerWidth, samples, windowMs])
 
-  const path = useMemo(() => {
-    if (points.length === 0) return ''
-    return points
-      .map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.t).toFixed(2)},${y(p.value).toFixed(2)}`)
-      .join(' ')
-  }, [points, x, y])
+  const handleMove = useCallback(
+    (event: React.MouseEvent<SVGRectElement> | React.TouchEvent<SVGRectElement>) => {
+      if (points.length === 0) return
+      const local = localPoint(event)
+      if (!local) return
+      const t = x.invert(clamp(local.x - MARGIN.left, 0, innerWidth))
+      const point = points[bisectT(points, t)]
+      if (!point) return
+      const sample = samples.find((s) => s.t >= point.t) ?? samples.at(-1)
+      showTooltip({
+        tooltipData: {
+          point,
+          presence: sample?.presence ?? false,
+          agoS: (latestT - point.t) / 1000,
+        },
+        tooltipLeft: MARGIN.left + x(point.t),
+        tooltipTop: MARGIN.top + y(point.value),
+      })
+    },
+    [innerWidth, latestT, points, samples, showTooltip, x, y],
+  )
 
-  const hoverIndex = hoverT === null ? -1 : nearestIndex(points, hoverT)
-  const hovered = hoverIndex >= 0 ? points[hoverIndex] : undefined
-  const hoveredSample =
-    hovered === undefined ? undefined : samples[nearestIndex(samples, hovered.t)]
-
-  const handleMove = (event: React.MouseEvent<SVGSVGElement>): void => {
-    const svg = svgRef.current
-    if (!svg) return
-    const rect = svg.getBoundingClientRect()
-    const localX = ((event.clientX - rect.left) / rect.width) * WIDTH - MARGIN.left
-    setHoverT(x.invert(clamp(localX, 0, plotWidth)))
-  }
-
-  const empty = points.length === 0
+  const last = points.at(-1)
 
   return (
-    <div className="chart">
-      <div className="chart__plot">
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          role="img"
-          aria-label="Detected distance over the recent window. Stretches with no presence appear in grey."
-          onMouseMove={handleMove}
-          onMouseLeave={() => setHoverT(null)}
-        >
-          <defs>
-            <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="var(--series-1)" stopOpacity="0.18" />
-              <stop offset="100%" stopColor="var(--series-1)" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
-            {absences.map((band) => (
-              <rect
+    <div style={{ position: 'relative' }}>
+      <svg
+        width={width}
+        height={HEIGHT}
+        role="img"
+        aria-label="Detected distance over the recent window. Stretches with no presence appear in grey."
+      >
+        <LinearGradient
+          id="distance-fill"
+          from={SERIES.energy}
+          to={SERIES.energy}
+          fromOpacity={0.18}
+          toOpacity={0}
+        />
+        <Group left={MARGIN.left} top={MARGIN.top}>
+          {absences.map((band) => {
+            const from = clamp(x(band.from), 0, innerWidth)
+            const to = clamp(x(band.to), 0, innerWidth)
+            return (
+              <Bar
                 key={`${band.from}-${band.to}`}
-                x={clamp(x(band.from), 0, plotWidth)}
+                x={from}
                 y={0}
-                width={Math.max(
-                  0,
-                  clamp(x(band.to), 0, plotWidth) - clamp(x(band.from), 0, plotWidth),
-                )}
-                height={plotHeight}
-                fill="var(--gridline)"
-                opacity={0.7}
+                width={Math.max(0, to - from)}
+                height={innerHeight}
+                fill={CHROME.absence}
               />
-            ))}
-            {yTicks.map((tick) => (
-              <g key={tick}>
-                <line className="chart__grid" x1={0} x2={plotWidth} y1={y(tick)} y2={y(tick)} />
-                <text className="chart__tick" x={-8} y={y(tick)} dy="0.32em" textAnchor="end">
-                  {tick.toLocaleString('en-US')}
-                </text>
-              </g>
-            ))}
+            )
+          })}
+
+          <GridRows scale={y} width={innerWidth} numTicks={4} stroke={CHROME.grid} />
+
+          {points.length > 0 ? (
+            <>
+              <AreaClosed<Point>
+                data={points}
+                x={(d) => x(d.t)}
+                y={(d) => y(d.value)}
+                yScale={y}
+                fill="url(#distance-fill)"
+              />
+              <LinePath<Point>
+                data={points}
+                x={(d) => x(d.t)}
+                y={(d) => y(d.value)}
+                stroke={SERIES.energy}
+                strokeWidth={2}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            </>
+          ) : (
             <text
-              className="chart__axis-label"
-              transform={`translate(${-MARGIN.left + 4},${plotHeight / 2}) rotate(-90)`}
+              x={innerWidth / 2}
+              y={innerHeight / 2}
               textAnchor="middle"
+              fill={CHROME.muted}
+              fontSize={11}
             >
-              m
+              Waiting for data…
             </text>
+          )}
 
-            {path ? (
-              <>
-                <path
-                  d={`${path} L${x(points.at(-1)!.t).toFixed(2)},${plotHeight} L${x(points[0]!.t).toFixed(2)},${plotHeight} Z`}
-                  fill={`url(#${gradientId})`}
-                />
-                <path
-                  d={path}
-                  fill="none"
-                  stroke="var(--series-1)"
-                  strokeWidth={2}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              </>
-            ) : null}
+          {tooltipOpen && tooltipData ? (
+            <Group>
+              <Line
+                from={{ x: x(tooltipData.point.t), y: 0 }}
+                to={{ x: x(tooltipData.point.t), y: innerHeight }}
+                stroke={CHROME.axis}
+                strokeWidth={1}
+              />
+              <circle
+                cx={x(tooltipData.point.t)}
+                cy={y(tooltipData.point.value)}
+                r={4}
+                fill={SERIES.energy}
+                stroke="var(--mantine-color-body)"
+                strokeWidth={2}
+              />
+            </Group>
+          ) : null}
 
-            {hovered ? (
-              <g>
-                <line
-                  className="chart__baseline"
-                  x1={x(hovered.t)}
-                  x2={x(hovered.t)}
-                  y1={0}
-                  y2={plotHeight}
-                />
-                <circle
-                  cx={x(hovered.t)}
-                  cy={y(hovered.value)}
-                  r={4}
-                  fill="var(--series-1)"
-                  stroke="var(--surface-1)"
-                  strokeWidth={2}
-                />
-              </g>
-            ) : null}
-
-            {/* Direct label on the endpoint only — never a number on every point. */}
-            {!empty && !hovered ? (
-              <text
-                className="chart__direct-label"
-                x={clamp(x(points.at(-1)!.t) - 6, 0, plotWidth)}
-                y={clamp(y(points.at(-1)!.value) - 8, 10, plotHeight)}
-                textAnchor="end"
-              >
-                {points.at(-1)!.value.toFixed(2)} m
-              </text>
-            ) : null}
-
-            <line
-              className="chart__baseline"
-              x1={0}
-              x2={plotWidth}
-              y1={plotHeight}
-              y2={plotHeight}
-            />
-            <text className="chart__tick" x={0} y={plotHeight + 14}>
-              −{Math.round(windowMs / 1000)} s
+          {/* Direct label on the endpoint only — never a number on every point. */}
+          {last && !tooltipOpen ? (
+            <text
+              x={clamp(x(last.t) - 6, 24, innerWidth)}
+              y={clamp(y(last.value) - 8, 10, innerHeight)}
+              textAnchor="end"
+              fontSize={10}
+              fontWeight={600}
+              fill="var(--mantine-color-dimmed)"
+              style={{ fontVariantNumeric: 'tabular-nums' }}
+            >
+              {last.value.toFixed(2)} m
             </text>
-            <text className="chart__tick" x={plotWidth} y={plotHeight + 14} textAnchor="end">
-              now
-            </text>
-            {empty ? (
-              <text
-                className="chart__axis-label"
-                x={plotWidth / 2}
-                y={plotHeight / 2}
-                textAnchor="middle"
-              >
-                Waiting for data…
-              </text>
-            ) : null}
-          </g>
-        </svg>
+          ) : null}
 
-        {hovered && hoveredSample ? (
-          <Tooltip
-            left={`${clamp(((MARGIN.left + x(hovered.t)) / WIDTH) * 100, 14, 86)}%`}
-            top={`${((MARGIN.top + y(hovered.value)) / HEIGHT) * 100}%`}
-            title={`${((latestT - hovered.t) / 1000).toFixed(1)} s ago`}
+          <AxisLeft
+            scale={y}
+            numTicks={4}
+            hideAxisLine
+            hideTicks
+            label="m"
+            labelProps={axisLabelProps}
+            labelOffset={24}
+            tickLabelProps={() => ({ ...tickLabelProps, textAnchor: 'end', dx: -4, dy: 3 })}
+          />
+          <Line
+            from={{ x: 0, y: innerHeight }}
+            to={{ x: innerWidth, y: innerHeight }}
+            stroke={CHROME.axis}
+          />
+          <text x={0} y={innerHeight + 15} fontSize={10} fill={CHROME.muted}>
+            −{Math.round(windowMs / 1000)} s
+          </text>
+          <text
+            x={innerWidth}
+            y={innerHeight + 15}
+            fontSize={10}
+            textAnchor="end"
+            fill={CHROME.muted}
+          >
+            now
+          </text>
+
+          <Bar
+            x={0}
+            y={0}
+            width={innerWidth}
+            height={innerHeight}
+            fill="transparent"
+            onMouseMove={handleMove}
+            onTouchMove={handleMove}
+            onMouseLeave={hideTooltip}
+          />
+        </Group>
+      </svg>
+
+      {tooltipOpen && tooltipData ? (
+        <TooltipWithBounds top={tooltipTop ?? 0} left={tooltipLeft ?? 0} style={tooltipStyles}>
+          <TooltipRows
+            title={`${tooltipData.agoS.toFixed(1)} s ago`}
             rows={[
               {
                 label: 'Distance',
-                value: `${hovered.value.toFixed(2)} m`,
-                color: 'var(--series-1)',
+                value: `${tooltipData.point.value.toFixed(2)} m`,
+                color: SERIES.energy,
               },
-              { label: 'Presence', value: hoveredSample.presence ? 'yes' : 'no' },
+              { label: 'Presence', value: tooltipData.presence ? 'yes' : 'no' },
             ]}
           />
-        ) : null}
-      </div>
+        </TooltipWithBounds>
+      ) : null}
     </div>
   )
 }

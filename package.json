@@ -21,6 +21,19 @@
     "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false --pretty"
   },
   "dependencies": {
+    "@mantine/core": "^9.6.1",
+    "@mantine/hooks": "^9.6.1",
+    "@visx/axis": "^4.0.0",
+    "@visx/event": "^4.0.0",
+    "@visx/gradient": "^4.0.0",
+    "@visx/grid": "^4.0.0",
+    "@visx/group": "^4.0.0",
+    "@visx/heatmap": "^4.0.0",
+    "@visx/responsive": "^4.0.0",
+    "@visx/scale": "^4.0.0",
+    "@visx/shape": "^4.0.0",
+    "@visx/tooltip": "^4.0.0",
+    "d3-array": "^3.2.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -29,6 +42,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
+    "@types/d3-array": "^3.2.2",
     "@types/node": "^26.6.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
