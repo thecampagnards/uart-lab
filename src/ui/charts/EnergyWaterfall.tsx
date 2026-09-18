@@ -24,7 +24,9 @@ import { COLUMNS, MAX_DB, bucketSamples, type Cell, type Column } from './bucket
 /** Width used for the very first paint, before the container is measured. */
 const INITIAL_WIDTH = 640
 
-const HEIGHT = 200
+// 16 gate rows: below ~290px the rows fall under 18px and the gate labels
+// start colliding with their own cells.
+const HEIGHT = 304
 const MARGIN = { top: 4, right: 4, bottom: 4, left: 24 }
 
 export interface EnergyWaterfallProps {
@@ -107,7 +109,7 @@ function Plot({
               y={gate * binHeight + binHeight / 2}
               dy="0.32em"
               textAnchor="end"
-              fontSize={9}
+              fontSize={10}
               fill="var(--chart-muted)"
               style={{ fontVariantNumeric: 'tabular-nums' }}
             >

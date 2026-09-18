@@ -136,6 +136,23 @@ describe('EnergyWaterfall', () => {
     expect(container.textContent).toContain('older · newer')
   })
 
+  it('keeps the gate rows tall enough for their own labels', () => {
+    const samples = Array.from({ length: 300 }, (_, i) => measurement(i * 100, 200))
+    const svg = draw(
+      <EnergyWaterfall samples={samples} windowMs={60_000} minGate={0} maxGate={12} />,
+    )
+    const cells = [...svg.querySelectorAll('rect')]
+    expect(cells.length).toBeGreaterThan(0)
+    // 16 gates share the plot height; below ~16px per row the labels collide.
+    for (const cell of cells) {
+      expect(Number(cell.getAttribute('height'))).toBeGreaterThanOrEqual(16)
+    }
+    // And the bottom row's label must still sit inside the plot.
+    const labels = [...svg.querySelectorAll('text')]
+    const lowest = Math.max(...labels.map((node) => Number(node.getAttribute('y'))))
+    expect(lowest).toBeLessThan(Number(svg.getAttribute('height')))
+  })
+
   it('tolerates simple-mode samples that carry no gate energy', () => {
     const samples = [{ t: 0, presence: true, distanceCm: 120, energy: [] }]
     const svg = draw(

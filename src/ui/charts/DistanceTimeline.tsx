@@ -22,7 +22,9 @@ import { TooltipRows } from './ChartChrome'
 /** Width used for the very first paint, before the container is measured. */
 const INITIAL_WIDTH = 640
 
-const HEIGHT = 220
+// Tall enough to read a metre of travel at half-width, where the card sits
+// beside the energy history in the two-column grid.
+const HEIGHT = 300
 const MARGIN = { top: 10, right: 12, bottom: 26, left: 46 }
 const MAX_POINTS = 360
 
