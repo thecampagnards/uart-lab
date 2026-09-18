@@ -25,6 +25,7 @@ import { FirmwarePanel } from './ui/components/FirmwarePanel'
 import { GenericFlashPanel } from './ui/components/GenericFlashPanel'
 import { LivePanel } from './ui/components/LivePanel'
 import { PresenceAssistant } from './ui/components/PresenceAssistant'
+import { initialCalibration, type CalibrationState } from './ui/components/calibrationState'
 import { TerminalPanel } from './ui/components/TerminalPanel'
 import { TracePanel } from './ui/components/TracePanel'
 
@@ -60,6 +61,9 @@ export default function App() {
 function Shell() {
   const [selectedId, setSelectedId] = useState(LD2420.id)
   const [navOpened, nav] = useDisclosure(false)
+  // Held here, not in the panel: tab panels are unmounted when you leave them,
+  // and the assistant's measurements must outlive a visit to another tab.
+  const [calibration, setCalibration] = useState<CalibrationState>(initialCalibration)
   const { state, actions, history, raw, trace } = useLd2420Session()
 
   const device: DeviceDescriptor = findDevice(selectedId) ?? LD2420
@@ -179,6 +183,8 @@ function Shell() {
                     <PresenceAssistant
                       state={state}
                       history={history}
+                      calibration={calibration}
+                      onCalibrationChange={setCalibration}
                       onApply={(config) => {
                         actions.setDraft(() => config)
                         setTab('configure')

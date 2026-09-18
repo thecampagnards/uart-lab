@@ -305,10 +305,18 @@ describe('App', () => {
       expect(await screen.findByText(/nothing checks that these thresholds/)).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /Load into the configuration form/ })).toBeEnabled()
 
+      // Leaving the tab must not throw the measurements away.
+      await user.click(screen.getByRole('tab', { name: 'Configuration' }))
+      await user.click(screen.getByRole('tab', { name: 'Presence setup' }))
+      expect(screen.getByText(/nothing checks that these thresholds/)).toBeInTheDocument()
+
       await user.click(screen.getByRole('button', { name: /Load into the configuration form/ }))
 
-      // It lands in the configuration form, unwritten.
+      // It lands in the configuration form, unwritten and editable.
       expect(await screen.findByText('Unwritten changes')).toBeInTheDocument()
+      expect(screen.getByLabelText(/Absence delay/)).toBeEnabled()
+      expect(screen.getByLabelText('Motion threshold, gate 0')).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Write to module' })).toBeEnabled()
     } finally {
       vi.useRealTimers()
     }

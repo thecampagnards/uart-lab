@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   Alert,
   Badge,
@@ -16,7 +16,6 @@ import {
 import type { MeasurementHistory } from '../../core/history'
 import { GATE_SIZE_M, OperatingMode, TOTAL_GATES } from '../../devices/ld2420/constants'
 import {
-  emptyStats,
   multipliers,
   proposeConfig,
   summarise,
@@ -25,36 +24,30 @@ import {
 import type { Ld2420Config } from '../../devices/ld2420/config'
 import { useLiveSnapshot } from '../../hooks/useLiveSnapshot'
 import type { SessionState } from '../../hooks/useLd2420Session'
+import type { CalibrationState, Stage } from './calibrationState'
 import { GateEnergyChart } from '../charts/GateEnergyChart'
 import { formatNumber, gateRangeLabel } from '../charts/format'
 
 const RECORD_SECONDS = 20
 
-type Stage = 'baseline' | 'presence'
-
-/**
- * Guided threshold setting.
- *
- * Two recordings — the area empty, then the area occupied — and the thresholds
- * go between. The second one is what makes this more than a formula: it says
- * whether the threshold just proposed can actually be crossed, which is the
- * question you are really asking when you tune a presence sensor.
- */
 export function PresenceAssistant({
   state,
   history,
+  calibration,
+  onCalibrationChange,
   onApply,
   onSetReportMode,
 }: {
   state: SessionState
   history: MeasurementHistory
+  calibration: CalibrationState
+  onCalibrationChange: (update: (current: CalibrationState) => CalibrationState) => void
   onApply: (config: Ld2420Config) => void
   onSetReportMode: () => void
 }) {
-  const [sensitivity, setSensitivity] = useState(0.5)
-  const [baseline, setBaseline] = useState<GateStats>(emptyStats)
-  const [presence, setPresence] = useState<GateStats | null>(null)
-  const [recording, setRecording] = useState<{ stage: Stage; endsAt: number } | null>(null)
+  const { baseline, presence, sensitivity, recording } = calibration
+  const setSensitivity = (value: number): void =>
+    onCalibrationChange((current) => ({ ...current, sensitivity: value }))
 
   const live = state.status === 'connected' || state.status === 'busy'
   const snapshot = useLiveSnapshot(history, RECORD_SECONDS * 1000, live || recording !== null, 5)
@@ -68,20 +61,25 @@ export function PresenceAssistant({
       () => {
         const frames = history.window(RECORD_SECONDS * 1000).map((m) => m.energy)
         const stats = summarise(frames)
-        if (recording.stage === 'baseline') setBaseline(stats)
-        else setPresence(stats)
-        setRecording(null)
+        onCalibrationChange((current) => ({
+          ...current,
+          ...(recording.stage === 'baseline' ? { baseline: stats } : { presence: stats }),
+          recording: null,
+        }))
       },
       Math.max(0, recording.endsAt - Date.now()),
     )
     return () => clearTimeout(timer)
-  }, [history, recording])
+  }, [history, onCalibrationChange, recording])
 
   const start = (stage: Stage): void => {
     // Only the window that follows counts, so anything already buffered is
     // irrelevant — clearing makes the countdown mean what it says.
     history.clear()
-    setRecording({ stage, endsAt: Date.now() + RECORD_SECONDS * 1000 })
+    onCalibrationChange((current) => ({
+      ...current,
+      recording: { stage, endsAt: Date.now() + RECORD_SECONDS * 1000 },
+    }))
   }
 
   const proposal = useMemo(
