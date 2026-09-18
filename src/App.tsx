@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -13,17 +13,29 @@ import {
   useMantineColorScheme,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { LD2420 } from './devices/registry'
+import { DEVICES, LD2420, deviceCan, findDevice, type DeviceDescriptor } from './devices/registry'
+import type { DeviceCapability } from './devices/types'
 import { OperatingMode, type OperatingModeValue } from './devices/ld2420/constants'
 import { useLd2420Session } from './hooks/useLd2420Session'
 import { theme } from './theme'
 import { ConfigPanel } from './ui/components/ConfigPanel'
 import { ConnectionPanel } from './ui/components/ConnectionPanel'
+import { DeviceList } from './ui/components/DeviceList'
 import { FirmwarePanel } from './ui/components/FirmwarePanel'
 import { GenericFlashPanel } from './ui/components/GenericFlashPanel'
-import { DeviceList } from './ui/components/DeviceList'
 import { LivePanel } from './ui/components/LivePanel'
 import { TracePanel } from './ui/components/TracePanel'
+
+const TAB_LABELS: Record<DeviceCapability, string> = {
+  monitor: 'Monitor',
+  configure: 'Configuration',
+  firmware: 'Firmware',
+  flash: 'Generic flash',
+  trace: 'Serial trace',
+}
+
+/** Tab order, independent of how a device happens to list its capabilities. */
+const TAB_ORDER: DeviceCapability[] = ['monitor', 'configure', 'firmware', 'flash', 'trace']
 
 export default function App() {
   return (
@@ -34,10 +46,21 @@ export default function App() {
 }
 
 function Shell() {
-  const [tab, setTab] = useState<string>('live')
-  const [selectedDevice, setSelectedDevice] = useState(LD2420.id)
+  const [selectedId, setSelectedId] = useState(LD2420.id)
   const [navOpened, nav] = useDisclosure(false)
   const { state, actions, history, trace } = useLd2420Session()
+
+  const device: DeviceDescriptor = findDevice(selectedId) ?? LD2420
+  const tabs = useMemo(
+    () => TAB_ORDER.filter((capability) => deviceCan(device, capability)),
+    [device],
+  )
+  const [tab, setTab] = useState<DeviceCapability>(tabs[0] ?? 'trace')
+
+  // Switching device can remove the tab that was open.
+  useEffect(() => {
+    if (!tabs.includes(tab)) setTab(tabs[0] ?? 'trace')
+  }, [tab, tabs])
 
   const connected = state.status === 'connected' || state.status === 'busy'
 
@@ -65,12 +88,12 @@ function Shell() {
 
       <AppShell.Navbar p="md">
         <DeviceList
-          selectedId={selectedDevice}
+          selectedId={device.id}
           onSelect={(id) => {
-            setSelectedDevice(id)
+            setSelectedId(id)
             nav.close()
           }}
-          connectedId={connected ? LD2420.id : null}
+          connectedId={connected ? device.id : null}
         />
       </AppShell.Navbar>
 
@@ -93,96 +116,115 @@ function Shell() {
           ))}
 
           <ConnectionPanel
-            device={LD2420}
+            device={device}
             state={state}
-            onConnectSerial={(baudRate) => void actions.connectSerial(baudRate, LD2420.portFilters)}
-            onConnectSimulator={() => void actions.connectSimulator()}
+            onConnectSerial={(baudRate) => void actions.connectSerial(baudRate, device)}
+            onConnectSimulator={() => void actions.connectSimulator(device)}
             onDisconnect={() => void actions.disconnect()}
           />
 
-          <Tabs value={tab} onChange={(value) => setTab(value ?? 'live')} keepMounted={false}>
+          <Tabs
+            value={tab}
+            onChange={(value) => setTab((value as DeviceCapability | null) ?? tabs[0] ?? 'trace')}
+            keepMounted={false}
+          >
             <Tabs.List>
-              <Tabs.Tab value="live">Monitor</Tabs.Tab>
-              <Tabs.Tab value="config">Configuration</Tabs.Tab>
-              <Tabs.Tab value="firmware">Firmware</Tabs.Tab>
-              <Tabs.Tab value="flash">Generic flash</Tabs.Tab>
-              <Tabs.Tab value="trace">Serial trace</Tabs.Tab>
+              {tabs.map((capability) => (
+                <Tabs.Tab key={capability} value={capability}>
+                  {TAB_LABELS[capability]}
+                </Tabs.Tab>
+              ))}
             </Tabs.List>
 
-            <Tabs.Panel value="live" pt="md">
-              <Stack gap="md">
-                <LivePanel
-                  state={state}
-                  history={history}
-                  config={state.deviceConfig ?? state.draftConfig}
-                  onSetMode={(mode: OperatingModeValue) => void actions.setMode(mode)}
-                />
-              </Stack>
-            </Tabs.Panel>
-
-            <Tabs.Panel value="config" pt="md">
-              <Stack gap="md">
-                {connected ? (
-                  <ConfigPanel
+            {deviceCan(device, 'monitor') ? (
+              <Tabs.Panel value="monitor" pt="md">
+                <Stack gap="md">
+                  <LivePanel
                     state={state}
-                    onChange={actions.setDraft}
-                    onApply={() => void actions.applyConfig()}
-                    onRevert={actions.revertDraft}
-                    onReload={() => void actions.reloadConfig()}
-                    onFactoryReset={() => void actions.resetToFactory()}
-                    onReboot={() => void actions.reboot()}
-                    onError={(message) => actions.notify('error', message)}
+                    history={history}
+                    config={state.deviceConfig ?? state.draftConfig}
+                    onSetMode={(mode: OperatingModeValue) => void actions.setMode(mode)}
                   />
-                ) : (
-                  <Alert variant="light">
-                    Connect a module — or start the simulated demo — to read and edit its
-                    configuration.
-                  </Alert>
-                )}
-              </Stack>
-            </Tabs.Panel>
+                </Stack>
+              </Tabs.Panel>
+            ) : null}
 
-            <Tabs.Panel value="firmware" pt="md">
-              <Stack gap="md">
-                {connected ? (
-                  <FirmwarePanel
-                    state={state}
-                    onReadInfo={() => void actions.readFirmwareInfo()}
-                    onUpload={(image, protocol) => void actions.uploadFirmware(image, protocol)}
-                    onError={(message) => actions.notify('error', message)}
-                  />
-                ) : (
-                  <Alert variant="light">
-                    Connect a module to read its firmware information or write a new image.
-                  </Alert>
-                )}
-              </Stack>
-            </Tabs.Panel>
+            {deviceCan(device, 'configure') ? (
+              <Tabs.Panel value="configure" pt="md">
+                <Stack gap="md">
+                  {connected ? (
+                    <ConfigPanel
+                      state={state}
+                      onChange={actions.setDraft}
+                      onApply={() => void actions.applyConfig()}
+                      onRevert={actions.revertDraft}
+                      onReload={() => void actions.reloadConfig()}
+                      onFactoryReset={() => void actions.resetToFactory()}
+                      onReboot={() => void actions.reboot()}
+                      onError={(message) => actions.notify('error', message)}
+                    />
+                  ) : (
+                    <Alert variant="light">
+                      Connect a module — or start the simulated demo — to read and edit its
+                      configuration.
+                    </Alert>
+                  )}
+                </Stack>
+              </Tabs.Panel>
+            ) : null}
 
-            <Tabs.Panel value="flash" pt="md">
-              <Stack gap="md">
-                {connected ? (
-                  <GenericFlashPanel
-                    state={state}
-                    onUpload={(image, protocol) => void actions.uploadFirmware(image, protocol)}
-                    onError={(message) => actions.notify('error', message)}
-                  />
-                ) : (
-                  <Alert variant="light">
-                    Connect a module to write an image with a descriptor of your choosing.
-                  </Alert>
-                )}
-              </Stack>
-            </Tabs.Panel>
+            {deviceCan(device, 'firmware') ? (
+              <Tabs.Panel value="firmware" pt="md">
+                <Stack gap="md">
+                  {connected && device.firmware ? (
+                    <FirmwarePanel
+                      protocol={device.firmware}
+                      state={state}
+                      onReadInfo={() => void actions.readFirmwareInfo()}
+                      onUpload={(image, protocol) => void actions.uploadFirmware(image, protocol)}
+                      onError={(message) => actions.notify('error', message)}
+                    />
+                  ) : (
+                    <Alert variant="light">
+                      Connect a module to read its firmware information or write a new image.
+                    </Alert>
+                  )}
+                </Stack>
+              </Tabs.Panel>
+            ) : null}
 
-            <Tabs.Panel value="trace" pt="md">
-              <TracePanel trace={trace} onClear={actions.clearTrace} />
-            </Tabs.Panel>
+            {deviceCan(device, 'flash') ? (
+              <Tabs.Panel value="flash" pt="md">
+                <Stack gap="md">
+                  {connected && device.firmware ? (
+                    <GenericFlashPanel
+                      defaultProfileId={device.firmware.id}
+                      state={state}
+                      onUpload={(image, protocol) => void actions.uploadFirmware(image, protocol)}
+                      onError={(message) => actions.notify('error', message)}
+                    />
+                  ) : (
+                    <Alert variant="light">
+                      Connect a module to write an image with a descriptor of your choosing.
+                    </Alert>
+                  )}
+                </Stack>
+              </Tabs.Panel>
+            ) : null}
+
+            {deviceCan(device, 'trace') ? (
+              <Tabs.Panel value="trace" pt="md">
+                <TracePanel trace={trace} onClear={actions.clearTrace} />
+              </Tabs.Panel>
+            ) : null}
           </Tabs>
 
           <Text size="xs" c="dimmed" pb="sm">
-            {LD2420.vendor} {LD2420.name} ·{' '}
-            {state.mode === OperatingMode.Report ? 'report' : 'simple'} mode ·{' '}
+            {device.vendor} {device.name}
+            {deviceCan(device, 'monitor')
+              ? ` · ${state.mode === OperatingMode.Report ? 'report' : 'simple'} mode`
+              : ''}{' '}
+            ·{' '}
             <Anchor
               inherit
               href="https://github.com/damianmichna/hi-link"
@@ -215,3 +257,5 @@ function ColorSchemeToggle() {
     </Tooltip>
   )
 }
+
+export { DEVICES }

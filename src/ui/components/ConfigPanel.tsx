@@ -277,6 +277,17 @@ export function ConfigPanel({
         </Table.ScrollContainer>
       </Card>
 
+      <ConfigJsonPanel
+        config={draft}
+        device={{
+          ...(state.identity.firmware !== undefined ? { firmware: state.identity.firmware } : {}),
+          ...(state.identity.serial !== undefined ? { serial: state.identity.serial } : {}),
+        }}
+        disabled={locked}
+        onApply={(next) => onChange(() => next)}
+        onError={onError}
+      />
+
       <Card>
         <Title order={2}>Module actions</Title>
         <Text size="xs" c="dimmed" mb="sm">
@@ -295,17 +306,6 @@ export function ConfigPanel({
           <Code>0x74</Code> leaves the module unusable if the transfer does not complete.
         </Text>
       </Card>
-
-      <ConfigJsonPanel
-        config={draft}
-        device={{
-          ...(state.identity.firmware !== undefined ? { firmware: state.identity.firmware } : {}),
-          ...(state.identity.serial !== undefined ? { serial: state.identity.serial } : {}),
-        }}
-        disabled={locked}
-        onApply={(next) => onChange(() => next)}
-        onError={onError}
-      />
 
       <Modal
         opened={confirmOpen}

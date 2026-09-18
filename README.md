@@ -22,9 +22,11 @@ presence radar.
 - **Import/export** of the configuration as JSON — as a file, or read and pasted
   straight from the page — factory reset, module restart.
 - **Firmware update**: write a `.bin` image to the module, with the image
-  validated first and progress reported block by block. A second tab drives the
-  same transfer against a protocol descriptor you choose, for another Hi-Link LD
-  module.
+  validated first and progress reported block by block.
+- **Generic flashing**: a second device entry drives the same transfer against a
+  descriptor you write — command bytes, block and flash sizes, status values —
+  so a Hi-Link LD module this project has never seen can be reached without a
+  code change.
 - **Serial trace** in hex, to cross-check against the protocol documentation.
 - **Built-in simulated module**, to try the tool out or develop without a sensor.
 
@@ -86,8 +88,10 @@ Built with [Vite](https://vite.dev), [React](https://react.dev),
 [visx](https://airbnb.io/visx) for the charts. Nothing below the UI depends on
 either, which is what keeps the protocol layer testable in plain Node.
 
-The details, and how to add a device, are in
-[`doc/architecture.md`](doc/architecture.md).
+Devices declare what they can do, and the shell turns that into tabs: the
+LD2420 offers monitoring, configuration, firmware and the trace; the generic
+Hi-Link entry only flashing and the trace. The details, and how to add a device,
+are in [`doc/architecture.md`](doc/architecture.md).
 
 ## About the protocol
 

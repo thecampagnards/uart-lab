@@ -283,3 +283,113 @@ async function sendBlock(
   )
   return reply.length >= 4 ? readU32le(reply, 0) : 0
 }
+
+/** Apply size overrides to a descriptor, leaving the original untouched. */
+export function withOverrides(
+  protocol: FirmwareProtocol,
+  overrides: { blockSize?: number; flashSize?: number; alignment?: number },
+): FirmwareProtocol {
+  const blockSize = overrides.blockSize ?? protocol.blockSize
+  return {
+    ...protocol,
+    blockSize,
+    flashSize: overrides.flashSize ?? protocol.flashSize,
+    alignment: overrides.alignment ?? protocol.alignment,
+    // The block frame grows with the block: 16 bytes of envelope around the data.
+    maxBlockFrameLength: 16 + blockSize + 4,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Descriptors as data
+// ---------------------------------------------------------------------------
+
+/**
+ * Check a descriptor before it is allowed to drive a transfer.
+ *
+ * This exists because descriptors can be written by hand, for a module this
+ * tool has never seen. It catches what is checkable — ranges, collisions,
+ * arithmetic — and nothing else: whether these really are the module's command
+ * bytes is not something software can tell you.
+ */
+export function validateFirmwareProtocol(protocol: FirmwareProtocol): string[] {
+  const problems: string[] = []
+  const byte = (value: unknown, name: string): void => {
+    if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > 0xff) {
+      problems.push(`${name} must be a byte from 0x00 to 0xff.`)
+    }
+  }
+
+  // A descriptor can arrive from a paste box, so nothing here may assume shape.
+  if (typeof protocol !== 'object' || protocol === null) return ['The descriptor is not an object.']
+  if (typeof protocol.commands !== 'object' || protocol.commands === null) {
+    return ['The descriptor has no `commands` block.']
+  }
+  if (typeof protocol.status !== 'object' || protocol.status === null) {
+    return ['The descriptor has no `status` block.']
+  }
+  if (typeof protocol.partitions !== 'object' || protocol.partitions === null) {
+    return ['The descriptor has no `partitions` block.']
+  }
+
+  const commands = protocol.commands
+  byte(commands.getUpgradePartition, 'get_upgrade_partition')
+  byte(commands.setUpgradeMode, 'set_upgrade_mode')
+  byte(commands.initUpgrade, 'init_firmware_upgrade')
+  byte(commands.sendBlock, 'send_firmware_block')
+  byte(commands.reboot, 'reboot')
+
+  const used = Object.values(commands)
+  if (new Set(used).size !== used.length) {
+    problems.push('Two commands share the same byte; replies could not be told apart.')
+  }
+
+  if (!Number.isInteger(protocol.blockSize) || protocol.blockSize <= 0) {
+    problems.push('Block size must be a positive whole number of bytes.')
+  }
+  if (!Number.isInteger(protocol.alignment) || protocol.alignment < 1) {
+    problems.push('Alignment must be at least 1.')
+  }
+  if (
+    Number.isInteger(protocol.blockSize) &&
+    Number.isInteger(protocol.alignment) &&
+    protocol.alignment > 1 &&
+    protocol.blockSize % protocol.alignment !== 0
+  ) {
+    problems.push(
+      `Block size ${protocol.blockSize} is not a multiple of the alignment ${protocol.alignment}, ` +
+        'so every block after the first would start misaligned.',
+    )
+  }
+  if (!Number.isInteger(protocol.flashSize) || protocol.flashSize <= 0) {
+    problems.push('Flash size must be a positive whole number of bytes.')
+  }
+  if (protocol.maxBlockFrameLength < protocol.blockSize + 16) {
+    problems.push('The block frame limit is smaller than one block plus its envelope.')
+  }
+  if (protocol.eraseTimeoutMs <= 0 || protocol.blockTimeoutMs <= 0) {
+    problems.push('Timeouts must be positive.')
+  }
+  if (Object.keys(protocol.partitions).length === 0) {
+    problems.push('At least one accepted partition value is needed, or every transfer aborts.')
+  }
+  if (protocol.status.written === protocol.status.programmed) {
+    problems.push('"Written" and "programmed" statuses cannot be the same value.')
+  }
+  return problems
+}
+
+/** Parse a descriptor written by hand, rejecting anything that would not work. */
+export function parseFirmwareProtocol(json: string): FirmwareProtocol {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    throw new Error('Unreadable descriptor: this is not valid JSON.')
+  }
+  if (typeof parsed !== 'object' || parsed === null) throw new Error('Empty descriptor.')
+  const candidate = parsed as FirmwareProtocol
+  const problems = validateFirmwareProtocol(candidate)
+  if (problems.length > 0) throw new Error(`Invalid descriptor: ${problems.join(' ')}`)
+  return candidate
+}

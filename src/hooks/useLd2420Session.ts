@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MeasurementHistory } from '../core/history'
 import { isWebSerialSupported, type Transport } from '../core/transport'
 import { WebSerialTransport } from '../core/webserial'
-import type { SerialPortFilterLike } from '../devices/types'
+import { deviceCan, LD2420, type DeviceDescriptor } from '../devices/registry'
 import {
   DEFAULT_BAUD_RATE,
   OperatingMode,
@@ -118,7 +118,7 @@ export function useLd2420Session() {
 
   /** Wire a freshly opened transport up to a driver and read the device. */
   const attach = useCallback(
-    async (transport: Transport) => {
+    async (transport: Transport, device: DeviceDescriptor) => {
       const driver = new Ld2420Driver(transport)
       driverRef.current = driver
       transportRef.current = transport
@@ -151,6 +151,12 @@ export function useLd2420Session() {
           `Could not read the firmware version (${describe(error)}). Check the RX/TX wiring and the baud rate.`,
         )
       }
+
+      // A device the tool only knows how to flash has no configuration to read
+      // and no report mode to enter; probing anyway would just produce errors
+      // that say nothing useful.
+      if (!deviceCan(device, 'configure')) return
+
       try {
         const config = await driver.readConfig()
         patch({ deviceConfig: config, draftConfig: cloneConfig(config), dirty: false })
@@ -168,7 +174,7 @@ export function useLd2420Session() {
   )
 
   const connectSerial = useCallback(
-    async (baudRate: number, portFilters: SerialPortFilterLike[] = []) => {
+    async (baudRate: number, device: DeviceDescriptor = LD2420) => {
       if (!isWebSerialSupported()) {
         notify(
           'error',
@@ -178,10 +184,10 @@ export function useLd2420Session() {
       }
       patch({ status: 'connecting' })
       try {
-        const transport = await WebSerialTransport.request(portFilters)
+        const transport = await WebSerialTransport.request(device.portFilters)
         historyRef.current.clear()
         await transport.open(baudRate)
-        await attach(transport)
+        await attach(transport, device)
       } catch (error) {
         patch({ status: 'disconnected' })
         if (isUserCancellation(error)) return
@@ -191,19 +197,22 @@ export function useLd2420Session() {
     [attach, notify, patch],
   )
 
-  const connectSimulator = useCallback(async () => {
-    patch({ status: 'connecting' })
-    try {
-      const simulator = new Ld2420Simulator()
-      historyRef.current.clear()
-      await simulator.open(DEFAULT_BAUD_RATE)
-      await attach(simulator)
-      notify('info', 'Simulated demo: no hardware is connected, the data is generated.')
-    } catch (error) {
-      patch({ status: 'disconnected' })
-      notify('error', `Could not start the demo: ${describe(error)}`)
-    }
-  }, [attach, notify, patch])
+  const connectSimulator = useCallback(
+    async (device: DeviceDescriptor = LD2420) => {
+      patch({ status: 'connecting' })
+      try {
+        const simulator = new Ld2420Simulator()
+        historyRef.current.clear()
+        await simulator.open(DEFAULT_BAUD_RATE)
+        await attach(simulator, device)
+        notify('info', 'Simulated demo: no hardware is connected, the data is generated.')
+      } catch (error) {
+        patch({ status: 'disconnected' })
+        notify('error', `Could not start the demo: ${describe(error)}`)
+      }
+    },
+    [attach, notify, patch],
+  )
 
   const disconnect = useCallback(async () => {
     const driver = driverRef.current

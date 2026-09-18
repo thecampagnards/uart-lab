@@ -64,11 +64,27 @@ descriptor holds what differs between modules — command bytes, block and flash
 sizes, status tables, partition names. The frame envelope is shared across
 Hi-Link's LD family, so the sequence only had to be written once.
 
-Only `LD2420_FIRMWARE` is backed by observation. The generic descriptor exists
-because the family almost certainly shares one bootloader design, but nothing
-published confirms it; the Generic flash tab is deliberately a separate tab from
-the device firmware tab, and asks for a second acknowledgement, so the
-unverified path never looks like the supported one.
+Descriptors live by ownership: `LD2420_FIRMWARE` in the device's own folder,
+the vendor-generic one and the catalogue in `src/devices/firmwareProfiles.ts`,
+and nothing device-specific in `core/`.
+
+Only `LD2420_FIRMWARE` is marked `verified`. The Generic flash panel makes every
+field editable, command bytes included, because its whole purpose is to reach a
+module this tool has never seen — a descriptor can be written by hand or pasted
+in as JSON. `validateFirmwareProtocol` checks what is checkable (ranges,
+collisions, arithmetic) and the interface says plainly that whether the bytes
+are right is not something software can tell you.
+
+## Devices declare what they can do
+
+Each registry entry lists `capabilities`, and the shell turns those into tabs.
+The LD2420 has `monitor`, `configure`, `firmware` and `trace`; the generic
+Hi-Link entry has only `flash` and `trace`, so it never shows a configuration
+form it could not fill, and connecting to it skips the configuration read and
+the report-mode switch that would only produce meaningless errors.
+
+That is also where the generic flasher lives: it is a device you select, not a
+tab that sits permanently beside the supported path.
 
 ## Adding a device
 

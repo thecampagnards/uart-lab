@@ -1,13 +1,10 @@
 /**
- * Firmware transfer descriptors.
+ * The LD2420's own firmware descriptor.
  *
- * `LD2420_FIRMWARE` is the only one backed by observation: every one of the
- * commands below is annotated in the protocol document as having been captured
- * from HLK-LD2420_Tool v1.2.0.0. The frame envelope is shared across Hi-Link's
- * LD family, and the vendor tools all offer the same "get firmware info, pick a
- * .bin, burn" workflow, which suggests one bootloader design across the range —
- * but nothing published confirms that the command bytes, block size or status
- * codes are identical elsewhere. Hence `verified: false` on the generic entry.
+ * Every command below is annotated in the protocol document as having been
+ * captured from HLK-LD2420_Tool v1.2.0.0, which is what makes this the only
+ * descriptor marked `verified`. Anything device-agnostic lives in
+ * `src/devices/firmwareProfiles.ts`, not here.
  */
 import type { FirmwareProtocol } from '../../core/firmware'
 import { FIRMWARE_BLOCK_SIZE, FLASH_SIZE_BYTES, MAX_FIRMWARE_FRAME_LENGTH } from './constants'
@@ -57,41 +54,4 @@ export const LD2420_FIRMWARE: FirmwareProtocol = {
   rebootSettleMs: 600,
   status: STATUS,
   partitions: PARTITIONS,
-}
-
-/**
- * The same sequence with the sizes left open, for another Hi-Link LD module.
- * Untested against anything; the interface says so and asks for a second
- * acknowledgement before using it.
- */
-export const GENERIC_HILINK_FIRMWARE: FirmwareProtocol = {
-  ...LD2420_FIRMWARE,
-  id: 'hilink-generic',
-  label: 'Hi-Link LD family (generic)',
-  verified: false,
-  caveat:
-    'The frame envelope is shared across the LD family, but these command bytes and status ' +
-    'codes have only been observed on the LD2420. Confirm them against your module before use.',
-}
-
-export const FIRMWARE_PROFILES: FirmwareProtocol[] = [LD2420_FIRMWARE, GENERIC_HILINK_FIRMWARE]
-
-export function findFirmwareProfile(id: string): FirmwareProtocol | undefined {
-  return FIRMWARE_PROFILES.find((profile) => profile.id === id)
-}
-
-/** Apply the user's size overrides to a profile, leaving the original untouched. */
-export function withOverrides(
-  profile: FirmwareProtocol,
-  overrides: { blockSize?: number; flashSize?: number; alignment?: number },
-): FirmwareProtocol {
-  const blockSize = overrides.blockSize ?? profile.blockSize
-  return {
-    ...profile,
-    blockSize,
-    flashSize: overrides.flashSize ?? profile.flashSize,
-    alignment: overrides.alignment ?? profile.alignment,
-    // The block frame grows with the block: 16 bytes of envelope around the data.
-    maxBlockFrameLength: 16 + blockSize + 4,
-  }
 }

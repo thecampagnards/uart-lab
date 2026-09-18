@@ -1,16 +1,17 @@
 import { Button, Card, Group, Text, Title } from '@mantine/core'
-import { LD2420_FIRMWARE } from '../../devices/ld2420/firmwareProfile'
 import type { FirmwareProtocol } from '../../core/firmware'
 import type { SessionState } from '../../hooks/useLd2420Session'
 import { DefinitionList } from './primitives'
 import { FirmwareDangerNotice, FirmwareTransferForm } from './FirmwareTransferForm'
 
 export function FirmwarePanel({
+  protocol,
   state,
   onReadInfo,
   onUpload,
   onError,
 }: {
+  protocol: FirmwareProtocol
   state: SessionState
   onReadInfo: () => void
   onUpload: (image: Uint8Array, protocol: FirmwareProtocol) => void
@@ -51,7 +52,7 @@ export function FirmwarePanel({
       </Card>
 
       <FirmwareTransferForm
-        protocol={LD2420_FIRMWARE}
+        protocol={protocol}
         state={state}
         onUpload={onUpload}
         onError={onError}

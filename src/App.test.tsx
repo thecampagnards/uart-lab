@@ -192,27 +192,63 @@ describe('App', () => {
     expect(screen.getByLabelText('Maximum gate')).toHaveValue('12')
   }, 20_000)
 
+  it('shows only the tabs the selected device supports', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    // The radar offers monitoring and configuration.
+    expect(screen.getByRole('tab', { name: 'Monitor' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Generic flash' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Generic Hi-Link LD/ }))
+
+    // The generic entry can only be flashed, so the rest is gone.
+    expect(await screen.findByRole('tab', { name: 'Generic flash' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Monitor' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Configuration' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Serial trace' })).toBeInTheDocument()
+  })
+
   it('keeps the generic flasher behind its own extra acknowledgement', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
     await screen.findByText('v1.6.1')
-    await user.click(screen.getByRole('tab', { name: 'Generic flash' }))
+    await user.click(screen.getByRole('button', { name: /Generic Hi-Link LD/ }))
+    await user.click(await screen.findByRole('tab', { name: 'Generic flash' }))
 
-    // The unverified profile is the default here, and says so.
-    expect(await screen.findByText(/only been observed on the LD2420/)).toBeInTheDocument()
+    expect(await screen.findByText('unverified descriptor')).toBeInTheDocument()
 
     const picker = document.querySelector('input[type="file"]')
     await user.upload(picker as HTMLInputElement, bin('other.bin', 512))
     await screen.findByText('512 bytes')
 
-    const write = screen.getByRole('button', { name: 'Write firmware to module' })
-    expect(write).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Write firmware to module' })).toBeDisabled()
     await user.click(screen.getByRole('checkbox', { name: /cannot be undone/i }))
     // Still disabled: the generic path asks for a second confirmation.
     expect(screen.getByRole('button', { name: 'Write firmware to module' })).toBeDisabled()
-    await user.click(screen.getByRole('checkbox', { name: /confirmed these command bytes/i }))
+    await user.click(screen.getByRole('checkbox', { name: /confirmed this descriptor/i }))
     expect(screen.getByRole('button', { name: 'Write firmware to module' })).toBeEnabled()
+  }, 20_000)
+
+  it('refuses to flash with a descriptor that could not work', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
+    await screen.findByText('v1.6.1')
+    await user.click(screen.getByRole('button', { name: /Generic Hi-Link LD/ }))
+    await user.click(await screen.findByRole('tab', { name: 'Generic flash' }))
+
+    // Two commands on the same byte: replies could not be told apart.
+    const sendBlock = screen.getByLabelText('send_firmware_block')
+    await user.clear(sendBlock)
+    await user.type(sendBlock, '0x74')
+
+    expect(await screen.findByText(/share the same byte/)).toBeInTheDocument()
+    expect(screen.getByText(/Fix the descriptor above/)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Write firmware to module' }),
+    ).not.toBeInTheDocument()
   }, 20_000)
 
   it('exposes the serial trace', async () => {

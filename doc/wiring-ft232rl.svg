@@ -84,7 +84,7 @@
   <rect class="pin-off" x="244" y="386" width="12" height="10" rx="2"/>
   <text class="pinlabel-off" x="234" y="395" text-anchor="end">RI</text>
 
-  <text class="sub" x="60" y="236">flow control and modem lines — unused</text>
+  <text class="sub" x="60" y="236">flow control / modem</text>
 
   <!-- ===================== Radar module ===================== -->
   <rect class="chip" x="520" y="56" width="200" height="230" rx="10"/>
