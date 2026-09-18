@@ -24,9 +24,12 @@ import { COLUMNS, MAX_DB, bucketSamples, type Cell, type Column } from './bucket
 /** Width used for the very first paint, before the container is measured. */
 const INITIAL_WIDTH = 640
 
-// 16 gate rows: below ~290px the rows fall under 18px and the gate labels
-// start colliding with their own cells.
-const HEIGHT = 304
+/**
+ * 16 gate rows share the plot height. Below ~290px the rows fall under 18px and
+ * the gate labels start colliding with their own cells, so that is the floor.
+ */
+const DEFAULT_HEIGHT = 304
+const MIN_HEIGHT = 288
 const MARGIN = { top: 4, right: 4, bottom: 4, left: 24 }
 
 export interface EnergyWaterfallProps {
@@ -34,13 +37,19 @@ export interface EnergyWaterfallProps {
   minGate: number
   maxGate: number
   windowMs: number
+  /** Plot height in pixels; clamped so the gate rows stay legible. */
+  height?: number
 }
 
-export const EnergyWaterfall = memo(function EnergyWaterfall(props: EnergyWaterfallProps) {
+export const EnergyWaterfall = memo(function EnergyWaterfall({
+  height = DEFAULT_HEIGHT,
+  ...rest
+}: EnergyWaterfallProps) {
+  const plotHeight = Math.max(MIN_HEIGHT, height)
   return (
     <div>
-      <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height: HEIGHT }}>
-        {({ width }) => (width > 0 ? <Plot {...props} width={width} /> : null)}
+      <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height: plotHeight }}>
+        {({ width }) => (width > 0 ? <Plot {...rest} height={plotHeight} width={width} /> : null)}
       </ParentSize>
       <MantineGroup gap="xs" mt={8} pl={24} wrap="nowrap">
         <Text size="xs" c="dimmed">
@@ -71,8 +80,9 @@ function Plot({
   minGate,
   maxGate,
   windowMs,
+  height: HEIGHT,
   width,
-}: EnergyWaterfallProps & { width: number }) {
+}: EnergyWaterfallProps & { height: number; width: number }) {
   const { tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip, tooltipOpen } =
     useTooltip<Cell & { gate: number }>()
 

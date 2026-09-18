@@ -22,11 +22,13 @@ import { ChartLegend, TooltipRows } from './ChartChrome'
 /** Width used for the very first paint, before the container is measured. */
 const INITIAL_WIDTH = 640
 
-const HEIGHT = 260
+const DEFAULT_HEIGHT = 260
 const MARGIN = { top: 10, right: 12, bottom: 38, left: 42 }
 const MAX_DB = 50
 
 export interface GateEnergyChartProps {
+  /** Plot height in pixels. The caller scales it with the viewport. */
+  height?: number
   energy: readonly number[]
   moveThresholds: readonly number[]
   stillThresholds: readonly number[]
@@ -42,7 +44,7 @@ interface HoverDatum {
   inRange: boolean
 }
 
-export function GateEnergyChart(props: GateEnergyChartProps) {
+export function GateEnergyChart({ height = DEFAULT_HEIGHT, ...rest }: GateEnergyChartProps) {
   return (
     <div>
       <ChartLegend
@@ -52,8 +54,8 @@ export function GateEnergyChart(props: GateEnergyChartProps) {
           { label: 'Still threshold', color: SERIES.still, line: true },
         ]}
       />
-      <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height: HEIGHT }}>
-        {({ width }) => (width > 0 ? <Plot {...props} width={width} /> : null)}
+      <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height }}>
+        {({ width }) => (width > 0 ? <Plot {...rest} height={height} width={width} /> : null)}
       </ParentSize>
     </div>
   )
@@ -65,8 +67,9 @@ function Plot({
   stillThresholds,
   minGate,
   maxGate,
+  height: HEIGHT,
   width,
-}: GateEnergyChartProps & { width: number }) {
+}: GateEnergyChartProps & { height: number; width: number }) {
   const { tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip, tooltipOpen } =
     useTooltip<HoverDatum>()
 

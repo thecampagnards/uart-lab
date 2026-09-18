@@ -49,3 +49,12 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* The wiring diagram is inlined from doc/wiring-ft232rl.svg, which carries its
+   own width and height; override them so it scales with the card. */
+.wiring-diagram svg {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+}

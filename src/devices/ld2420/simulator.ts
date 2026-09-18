@@ -11,6 +11,7 @@ import { Emitter, type Transport, type TransportInfo, type Unsubscribe } from '.
 import {
   ACK,
   BAUD_RATES,
+  BlockStatus,
   CMD_FOOTER,
   CMD_HEADER,
   Cmd,
@@ -18,6 +19,7 @@ import {
   ENERGY_HEADER,
   FrameType,
   GATE_SIZE_M,
+  FIRMWARE_BLOCK_SIZE,
   NACK,
   OperatingMode,
   Param,
@@ -27,10 +29,16 @@ import {
   type OperatingModeValue,
 } from './constants'
 import { factoryConfig } from './config'
+import { firmwareChecksum } from './frames'
 
 export interface SimulatorOptions {
   firmware?: string
   serial?: string
+  /**
+   * Which block-counter convention the simulated module expects. The protocol
+   * document contradicts itself, so both are reproducible here.
+   */
+  firmwareCounterBase?: 0 | 1
   /** Drive the report stream from a real timer. Off in tests. */
   autoRun?: boolean
   /** Interval between report/simple frames, in ms. */
@@ -50,6 +58,7 @@ export class Ld2420Simulator implements Transport {
   private readonly serial: string
   private readonly reportIntervalMs: number
   private readonly autoRun: boolean
+  private readonly firmwareCounterBase: 0 | 1
 
   private open_ = false
   private baud = 115200
@@ -57,6 +66,19 @@ export class Ld2420Simulator implements Transport {
   private commandMode = false
   private mode: OperatingModeValue = OperatingMode.Simple
   private timer: ReturnType<typeof setInterval> | null = null
+
+  // Firmware upgrade state.
+  private upgradeMode = false
+  private upgrade: {
+    partition: number
+    length: number
+    checksum: number
+    received: number[]
+    nextCounter: number
+  } | null = null
+
+  /** The image the simulated module ended up with, for tests to assert on. */
+  public flashedImage: Uint8Array | null = null
 
   // Scene state: a target walking back and forth in front of the sensor.
   private elapsedMs = 0
@@ -67,6 +89,7 @@ export class Ld2420Simulator implements Transport {
     this.firmware = options.firmware ?? 'v1.6.1'
     this.serial = options.serial ?? '0102030405060708'
     this.autoRun = options.autoRun ?? true
+    this.firmwareCounterBase = options.firmwareCounterBase ?? 0
     this.reportIntervalMs = options.reportIntervalMs ?? REPORT_INTERVAL_MS
     this.loadFactoryDefaults()
   }
@@ -172,6 +195,20 @@ export class Ld2420Simulator implements Transport {
   }
 
   private handleRequest(cmd: number, payload: Uint8Array): void {
+    // In upgrade mode the real module answers only the firmware commands.
+    if (
+      this.upgradeMode &&
+      cmd !== Cmd.InitFirmwareUpgrade &&
+      cmd !== Cmd.SendFirmwareBlock &&
+      cmd !== Cmd.SetUpgradeMode &&
+      cmd !== Cmd.GetActiveFirmware &&
+      cmd !== Cmd.GetUpgradePartition &&
+      cmd !== Cmd.GetFirmwareId &&
+      cmd !== Cmd.Reboot
+    ) {
+      this.respond(cmd, NACK)
+      return
+    }
     switch (cmd) {
       case Cmd.OpenCommandMode:
         this.commandMode = true
@@ -198,6 +235,79 @@ export class Ld2420Simulator implements Transport {
       case Cmd.GetActiveFirmware:
         this.respond(cmd, ACK, u32le(0x02))
         return
+      case Cmd.GetUpgradePartition:
+        this.respond(cmd, ACK, u32le(0x01))
+        return
+      case Cmd.SetUpgradeMode: {
+        // The real module answers nothing the first time and NACKs afterwards.
+        if (this.upgradeMode) {
+          this.respond(cmd, NACK)
+          return
+        }
+        this.upgradeMode = true
+        this.mode = OperatingMode.Simple
+        return
+      }
+      case Cmd.InitFirmwareUpgrade: {
+        if (!this.upgradeMode) return this.respond(cmd, NACK)
+        const partition = readU32le(payload, 0)
+        const length = readU32le(payload, 4)
+        const checksum = readU32le(payload, 8)
+        if (length === 0 || length % 4 !== 0) {
+          this.respond(cmd, ACK, u32le(0x02))
+          return
+        }
+        this.upgrade = {
+          partition,
+          length,
+          checksum,
+          received: [],
+          nextCounter: this.firmwareCounterBase,
+        }
+        // On success the field carries the module's receive buffer size.
+        this.respond(cmd, ACK, u32le(148))
+        return
+      }
+      case Cmd.SendFirmwareBlock: {
+        const transfer = this.upgrade
+        if (!this.upgradeMode || !transfer) return this.respond(cmd, NACK)
+        const counter = readU32le(payload, 0)
+        const declared = readU32le(payload, 4)
+        const block = payload.slice(8)
+
+        if (counter !== transfer.nextCounter) {
+          this.respond(cmd, ACK, u32le(BlockStatus.CounterError))
+          return
+        }
+        if (firmwareChecksum(block) !== declared) {
+          this.respond(cmd, ACK, u32le(BlockStatus.ChecksumError))
+          return
+        }
+        if (block.length === 0 || block.length > FIRMWARE_BLOCK_SIZE) {
+          this.respond(cmd, ACK, u32le(BlockStatus.LengthError))
+          return
+        }
+        if (block.length % 4 !== 0) {
+          this.respond(cmd, ACK, u32le(BlockStatus.AlignmentError))
+          return
+        }
+
+        transfer.received.push(...block)
+        transfer.nextCounter++
+
+        if (transfer.received.length < transfer.length) {
+          this.respond(cmd, ACK, u32le(BlockStatus.Written))
+          return
+        }
+
+        const image = Uint8Array.from(transfer.received)
+        const ok = image.length === transfer.length && firmwareChecksum(image) === transfer.checksum
+        if (ok) this.flashedImage = image
+        this.upgrade = null
+        this.upgradeMode = false
+        this.respond(cmd, ACK, u32le(ok ? BlockStatus.Programmed : BlockStatus.VerificationError))
+        return
+      }
       case Cmd.GetParameter: {
         if (!this.commandMode) return this.respond(cmd, NACK)
         const out: number[] = []
@@ -238,6 +348,8 @@ export class Ld2420Simulator implements Transport {
       case Cmd.Reboot:
         // The real module restarts silently and comes back in simple mode.
         this.commandMode = false
+        this.upgradeMode = false
+        this.upgrade = null
         this.mode = OperatingMode.Simple
         this.elapsedMs = 0
         return
@@ -264,7 +376,7 @@ export class Ld2420Simulator implements Transport {
   tick(dtMs: number): void {
     if (!this.open_) return
     this.elapsedMs += dtMs
-    if (this.commandMode) return // command mode stops the data stream
+    if (this.commandMode || this.upgradeMode) return // both stop the data stream
 
     const scene = this.scene()
     if (this.mode === OperatingMode.Report) {

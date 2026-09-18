@@ -14,6 +14,7 @@ import type { MeasurementHistory } from '../../core/history'
 import { GATE_SIZE_M, OperatingMode, TOTAL_GATES } from '../../devices/ld2420/constants'
 import { linearToDb } from '../../devices/ld2420/frames'
 import type { Ld2420Config } from '../../devices/ld2420/config'
+import { useChartHeights } from '../../hooks/useChartHeights'
 import { useLiveSnapshot } from '../../hooks/useLiveSnapshot'
 import type { SessionState } from '../../hooks/useLd2420Session'
 import { DistanceTimeline } from '../charts/DistanceTimeline'
@@ -42,6 +43,7 @@ export function LivePanel({
   const [windowMs, setWindowMs] = useState(60_000)
   const live = state.status === 'connected' || state.status === 'busy'
   const snapshot = useLiveSnapshot(history, windowMs, live, 10)
+  const chartHeight = useChartHeights()
   const latest = snapshot.latest
   const energy = latest?.energy.length === TOTAL_GATES ? latest.energy : null
   const reportMode = state.mode === OperatingMode.Report
@@ -135,6 +137,7 @@ export function LivePanel({
         </Text>
         {energy ? (
           <GateEnergyChart
+            height={chartHeight.gates}
             energy={energy}
             moveThresholds={config.moveThresholds}
             stillThresholds={config.stillThresholds}
@@ -157,7 +160,11 @@ export function LivePanel({
           <Text size="xs" c="dimmed" mb="sm">
             Grey bands are stretches with no reported presence.
           </Text>
-          <DistanceTimeline samples={snapshot.samples} windowMs={windowMs} />
+          <DistanceTimeline
+            samples={snapshot.samples}
+            windowMs={windowMs}
+            height={chartHeight.panel}
+          />
         </Card>
         <Card>
           <Title order={2}>Energy history</Title>
@@ -167,6 +174,7 @@ export function LivePanel({
           <EnergyWaterfall
             samples={heatmapSamples}
             windowMs={windowMs}
+            height={chartHeight.panel}
             minGate={config.minGate}
             maxGate={config.maxGate}
           />

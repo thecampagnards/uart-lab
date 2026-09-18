@@ -70,12 +70,45 @@ This project applies it to both, which gives:
 A full configuration read (3 scalars + 32 thresholds) therefore fits in three
 exchanges.
 
+## Firmware upgrade (`0x70`-`0x75`)
+
+Implemented in `Ld2420Driver.uploadFirmware`. The sequence is:
+
+1. `0x71` `get_upgrade_partition` — which partition a transfer targets. A value
+   outside {1, 2} aborts before anything irreversible happens.
+2. `0x74` `set_upgrade_mode` — no reply. **Point of no return.** From here the
+   module answers almost nothing else, and the upstream document records no way
+   back out except completing a transfer.
+3. `0x72` `init_firmware_upgrade` — partition, image length and whole-image
+   checksum. This erases the partition, so the reply can take seconds; the
+   driver allows 20 s. A data status of 1, 2 or 4 is an error; any other value
+   is the module's receive buffer size.
+4. `0x73` `send_firmware_block` — 128 bytes at a time, each with its own
+   checksum. Data status `0x00` means written, `0x80` means programming
+   finished, anything else is a bit set of the documented errors.
+5. `0x68` `reboot`.
+
+Three things the document does not settle, and what this project does about
+them:
+
+- **Block counter base.** The prose says the first block is 0; the worked
+  example shows 1. The driver starts at 0 and, if the module rejects the
+  sequence number on the _first_ block only, switches to 1-based and retries
+  rather than failing the transfer. The simulator can reproduce either
+  convention (`firmwareCounterBase`), and both are covered by tests.
+- **The 64-byte frame ceiling does not apply here.** A block frame is 148 bytes
+  end to end, so `encodeCommand` takes an explicit higher limit for `0x73`
+  instead of the limit being relaxed everywhere.
+- **Alignment.** Block status `0x20` rejects data that is not 4-byte aligned, so
+  an image whose length is not a multiple of 4 is refused locally, before
+  upgrade mode is entered. Padding it silently would change what gets flashed.
+
+The interface asks for an explicit acknowledgement and a confirmation before
+step 2, and states plainly that an interrupted transfer leaves the module
+waiting for another attempt rather than working.
+
 ## Commands deliberately not exposed
 
-- `0x74` `set_upgrade_mode`, `0x72` and `0x73` — firmware update. The upstream
-  document reports that entering upgrade mode without completing the transfer
-  leaves the module unusable, with no known way out. That risk is not warranted
-  in a configuration tool.
 - `0x01` / `0x02` (raw registers) — the meaning of the 256 registers is not
   established; exposing them would amount to offering to write at random.
 - `0x26` `set_baudrate` — implemented in the driver

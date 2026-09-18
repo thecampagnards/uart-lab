@@ -5,17 +5,20 @@ import {
   Button,
   Card,
   Code,
+  Collapse,
   Group,
   NativeSelect,
   Stack,
   Text,
   Title,
 } from '@mantine/core'
+import { useDisclosure } from '@mantine/hooks'
 import { isWebSerialSupported } from '../../core/transport'
 import { OPERATING_MODE_LABELS } from '../../devices/ld2420/constants'
 import type { DeviceDescriptor } from '../../devices/registry'
 import type { SessionState } from '../../hooks/useLd2420Session'
 import { DefinitionList } from './primitives'
+import { WiringDiagram } from './WiringDiagram'
 
 export function ConnectionPanel({
   device,
@@ -31,6 +34,7 @@ export function ConnectionPanel({
   onDisconnect: () => void
 }) {
   const [baudRate, setBaudRate] = useState(device.defaultBaudRate)
+  const [wiringOpen, wiring] = useDisclosure(false)
   const supported = isWebSerialSupported()
   const connected = state.status === 'connected' || state.status === 'busy'
 
@@ -119,14 +123,19 @@ export function ConnectionPanel({
           ]}
         />
       ) : (
-        <Stack gap={4} mt="md">
-          <Text size="xs" c="dimmed">
-            FT232RL wiring: <Code>TX→RX</Code>, <Code>RX→OT1</Code>, <Code>GND→GND</Code>,{' '}
-            <Code>3V3→3V3</Code>.
-          </Text>
-          <Text size="xs" c="dimmed">
-            The module is a 3.3 V part — powering it from 5 V destroys it.
-          </Text>
+        <Stack gap="xs" mt="md">
+          <Group gap="xs">
+            <Text size="xs" c="dimmed">
+              FT232RL wiring: <Code>TXD→RX</Code>, <Code>RXD←OT1</Code>, <Code>GND→GND</Code>,{' '}
+              <Code>3V3→3V3</Code>.
+            </Text>
+            <Button variant="subtle" size="compact-xs" onClick={wiring.toggle}>
+              {wiringOpen ? 'Hide the diagram' : 'Show the diagram'}
+            </Button>
+          </Group>
+          <Collapse expanded={wiringOpen}>
+            <WiringDiagram />
+          </Collapse>
         </Stack>
       )}
     </Card>

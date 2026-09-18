@@ -1,5 +1,10 @@
 # Wiring — FT232RL UART bridge to HLK-LD2420
 
+![Wiring between an FT232RL bridge and an HLK-LD2420: 3V3 to 3V3, GND to GND, the bridge's TXD to the module's RX carrying commands, and the module's OT1 back to the bridge's RXD carrying measurements. OT2 is left unconnected.](./wiring-ft232rl.svg)
+
+The two data wires each run one way. `OT1` is the module's serial output —
+there is no pin called TX, which is the connection people most often get wrong.
+
 ## Logic level warning
 
 The LD2420 is a **3.3 V** module, for both supply and signals. Many FT232RL

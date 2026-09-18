@@ -20,6 +20,8 @@ presence radar.
 - **Configuration**: minimum and maximum gate, absence delay, and all 32
   thresholds (motion and still) — shown both raw and in dB.
 - **Import/export** of the configuration as JSON, factory reset, module restart.
+- **Firmware update**: write a `.bin` image to the module, with the image
+  validated first and progress reported block by block.
 - **Serial trace** in hex, to cross-check against the protocol documentation.
 - **Built-in simulated module**, to try the tool out or develop without a sensor.
 
@@ -34,7 +36,11 @@ server.
 | Context  | HTTPS, or `http://localhost`                                                           |
 | Hardware | HLK-LD2420 + a USB-UART bridge set to **3.3 V**                                        |
 
-Wiring is described in [`doc/hardware-ft232rl.md`](doc/hardware-ft232rl.md).
+![Wiring between an FT232RL bridge and an HLK-LD2420: 3V3 to 3V3, GND to GND, the bridge's TXD to the module's RX carrying commands, and the module's OT1 back to the bridge's RXD carrying measurements.](doc/wiring-ft232rl.svg)
+
+`OT1` is the module's serial output — there is no pin called TX. The full notes,
+including how to check the port from a shell, are in
+[`doc/hardware-ft232rl.md`](doc/hardware-ft232rl.md).
 **The module is a 3.3 V part: powering it from 5 V destroys it.**
 
 ## Getting started
@@ -91,9 +97,15 @@ The points that document leaves open — the report frame layout, the multiplexi
 of four encodings, batch limits — are written up in
 [`doc/protocol-notes.md`](doc/protocol-notes.md).
 
-Firmware update (`0x72`–`0x74`) is **not** exposed: entering upgrade mode
-without carrying the transfer through leaves the module unusable, with no known
-way out.
+### Firmware update
+
+The Firmware tab writes a `.bin` image to the module. Read
+[`doc/protocol-notes.md`](doc/protocol-notes.md) before using it: entering
+upgrade mode stops the module answering anything else, and the protocol
+documentation records no way back out except completing a transfer. The image is
+checked locally first — length, 4-byte alignment, flash size — and the write is
+behind an explicit acknowledgement and a confirmation, because an interrupted
+transfer leaves the module waiting for another attempt rather than working.
 
 ## Licence
 

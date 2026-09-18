@@ -22,9 +22,7 @@ import { TooltipRows } from './ChartChrome'
 /** Width used for the very first paint, before the container is measured. */
 const INITIAL_WIDTH = 640
 
-// Tall enough to read a metre of travel at half-width, where the card sits
-// beside the energy history in the two-column grid.
-const HEIGHT = 300
+const DEFAULT_HEIGHT = 300
 const MARGIN = { top: 10, right: 12, bottom: 26, left: 46 }
 const MAX_POINTS = 360
 
@@ -41,17 +39,24 @@ const bisectT = (points: Point[], t: number): number => bisectByT.center(points,
 export interface DistanceTimelineProps {
   samples: readonly Measurement[]
   windowMs: number
+  /** Plot height in pixels. The caller scales it with the viewport. */
+  height?: number
 }
 
-export function DistanceTimeline(props: DistanceTimelineProps) {
+export function DistanceTimeline({ height = DEFAULT_HEIGHT, ...rest }: DistanceTimelineProps) {
   return (
-    <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height: HEIGHT }}>
-      {({ width }) => (width > 0 ? <Plot {...props} width={width} /> : null)}
+    <ParentSize debounceTime={80} initialSize={{ width: INITIAL_WIDTH, height }}>
+      {({ width }) => (width > 0 ? <Plot {...rest} height={height} width={width} /> : null)}
     </ParentSize>
   )
 }
 
-function Plot({ samples, windowMs, width }: DistanceTimelineProps & { width: number }) {
+function Plot({
+  samples,
+  windowMs,
+  height: HEIGHT,
+  width,
+}: DistanceTimelineProps & { height: number; width: number }) {
   const { tooltipData, tooltipLeft, tooltipTop, showTooltip, hideTooltip, tooltipOpen } =
     useTooltip<{ point: Point; presence: boolean; agoS: number }>()
 

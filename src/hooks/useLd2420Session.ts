@@ -19,7 +19,15 @@ import {
   validateConfig,
   type Ld2420Config,
 } from '../devices/ld2420/config'
-import { Ld2420Driver, type DeviceIdentity, type TraceEntry } from '../devices/ld2420/driver'
+import {
+  Ld2420Driver,
+  validateFirmwareImage,
+  type DeviceIdentity,
+  type FirmwareInfo,
+  type FirmwareProgress,
+  type TraceEntry,
+} from '../devices/ld2420/driver'
+import { FLASH_SIZE_BYTES } from '../devices/ld2420/constants'
 import { Ld2420Simulator } from '../devices/ld2420/simulator'
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'busy'
@@ -46,6 +54,10 @@ export interface SessionState {
   pendingOperation: string | null
   notices: SessionNotice[]
   traceVersion: number
+  /** Null until the firmware tab asks for it. */
+  firmwareInfo: FirmwareInfo | null
+  /** Non-null only while an image is being written. */
+  firmwareProgress: FirmwareProgress | null
 }
 
 let noticeId = 0
@@ -70,6 +82,8 @@ export function useLd2420Session() {
     pendingOperation: null,
     notices: [],
     traceVersion: 0,
+    firmwareInfo: null,
+    firmwareProgress: null,
   }))
 
   const patch = useCallback((update: Partial<SessionState>) => {
@@ -311,6 +325,61 @@ export function useLd2420Session() {
     [patch, run],
   )
 
+  const readFirmwareInfo = useCallback(async () => {
+    const info = await run('Reading firmware information', (driver) => driver.readFirmwareInfo())
+    if (info) patch({ firmwareInfo: info })
+  }, [patch, run])
+
+  /**
+   * Write a firmware image. Irreversible once started — the caller is expected
+   * to have taken explicit confirmation first.
+   */
+  const uploadFirmware = useCallback(
+    async (image: Uint8Array) => {
+      const driver = driverRef.current
+      if (!driver) {
+        notify('error', 'No device connected.')
+        return
+      }
+      const problems = validateFirmwareImage(image, FLASH_SIZE_BYTES)
+      if (problems.length > 0) {
+        notify('error', problems.join(' '))
+        return
+      }
+
+      patch({ pendingOperation: 'Writing firmware', status: 'busy' })
+      try {
+        await driver.uploadFirmware(image, {
+          onProgress: (firmwareProgress) => patch({ firmwareProgress }),
+        })
+        historyRef.current.clear()
+        patch({
+          mode: OperatingMode.Simple,
+          identity: {},
+          deviceConfig: null,
+          firmwareInfo: null,
+        })
+        notify(
+          'info',
+          'Firmware written and the module restarted. Re-read its configuration before using it.',
+        )
+      } catch (error) {
+        notify(
+          'error',
+          `Firmware update failed: ${describe(error)} The module may be left in upgrade mode; ` +
+            'power-cycle it and retry the transfer before assuming it is lost.',
+        )
+      } finally {
+        patch({
+          pendingOperation: null,
+          firmwareProgress: null,
+          status: driverRef.current ? 'connected' : 'disconnected',
+        })
+      }
+    },
+    [notify, patch],
+  )
+
   const reboot = useCallback(async () => {
     const result = await run('Restarting', async (driver) => {
       await driver.reboot()
@@ -338,6 +407,8 @@ export function useLd2420Session() {
       reloadConfig,
       setMode,
       reboot,
+      readFirmwareInfo,
+      uploadFirmware,
       dismissNotice,
       notify,
       clearTrace: () => {
@@ -353,12 +424,14 @@ export function useLd2420Session() {
       disconnect,
       dismissNotice,
       notify,
+      readFirmwareInfo,
       reboot,
       reloadConfig,
       resetToFactory,
       revertDraft,
       setDraft,
       setMode,
+      uploadFirmware,
     ],
   )
 

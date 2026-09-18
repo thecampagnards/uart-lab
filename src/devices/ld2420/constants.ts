@@ -46,6 +46,9 @@ export const Cmd = {
   Reboot: 0x68,
   GetActiveFirmware: 0x70,
   GetUpgradePartition: 0x71,
+  InitFirmwareUpgrade: 0x72,
+  SendFirmwareBlock: 0x73,
+  SetUpgradeMode: 0x74,
   GetFirmwareId: 0x75,
 } as const
 export type CmdCode = (typeof Cmd)[keyof typeof Cmd]
@@ -115,3 +118,63 @@ export const FACTORY_TIMEOUT_S = 30
 
 export const ACK = 0x0000
 export const NACK = 0x0001
+
+// ---------------------------------------------------------------------------
+// Firmware upgrade (commands 0x70-0x75)
+// ---------------------------------------------------------------------------
+
+/**
+ * Data payload per `send_firmware_block` frame. The protocol document's own
+ * example uses 128 bytes, which puts the frame at 148 bytes end to end — well
+ * over the 64-byte ceiling that applies to ordinary commands.
+ */
+export const FIRMWARE_BLOCK_SIZE = 128
+
+/** 4 header + 2 length + 1 command + 1 type + 4 counter + 4 checksum + data + 4 footer. */
+export const MAX_FIRMWARE_FRAME_LENGTH = 16 + FIRMWARE_BLOCK_SIZE + 4
+
+/** The module's flash, for sanity-checking an image before sending it. */
+export const FLASH_SIZE_BYTES = 32 * 1024
+
+/** `get_active_firmware` (0x70) result. */
+export const ActiveFirmware: Record<number, string> = {
+  0x01: 'Bootloader',
+  0x02: 'App 0',
+  0x04: 'App 1',
+}
+
+/** `get_upgrade_partition` (0x71) result. */
+export const UpgradePartition: Record<number, string> = {
+  0x01: 'App 0',
+  0x02: 'App 1',
+}
+
+/** `init_firmware_upgrade` (0x72) data status. Any other value is a buffer size. */
+export const INIT_ERRORS: Record<number, string> = {
+  0x01: 'Target partition unavailable.',
+  0x02: 'Image length rejected by the module.',
+  0x04: 'Flash erase failed.',
+}
+
+/** `send_firmware_block` (0x73) data status. A bit field, except 0x00 and 0x80. */
+export const BlockStatus = {
+  Written: 0x00,
+  CounterError: 0x01,
+  FlashWriteError: 0x02,
+  FlashReadError: 0x04,
+  ChecksumError: 0x08,
+  LengthError: 0x10,
+  AlignmentError: 0x20,
+  VerificationError: 0x40,
+  Programmed: 0x80,
+} as const
+
+export const BLOCK_ERRORS: [number, string][] = [
+  [BlockStatus.CounterError, 'Block sequence number rejected.'],
+  [BlockStatus.FlashWriteError, 'Flash write error.'],
+  [BlockStatus.FlashReadError, 'Flash read aborted.'],
+  [BlockStatus.ChecksumError, 'Block checksum mismatch.'],
+  [BlockStatus.LengthError, 'Block length error.'],
+  [BlockStatus.AlignmentError, 'Data is not 4-byte aligned.'],
+  [BlockStatus.VerificationError, 'Image verification failed.'],
+]

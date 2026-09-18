@@ -11,6 +11,12 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 
+/** A .bin file of `size` bytes, as the file picker would hand it over. */
+function bin(name: string, size: number): File {
+  const bytes = Uint8Array.from({ length: size }, (_, i) => i & 0xff)
+  return new File([bytes], name, { type: 'application/octet-stream' })
+}
+
 describe('App', () => {
   beforeEach(() => {
     // jsdom has no canvas backend; the waterfall guards against a null context,
@@ -25,6 +31,17 @@ describe('App', () => {
     expect(screen.getByText('uart-lab')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /HLK-LD2420/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Monitor' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('shows the wiring diagram on request, described for screen readers', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Show the diagram' }))
+    const diagram = await screen.findByRole('img', { name: /Wiring between an FT232RL/ })
+    // The claim the picture is there to make: the two data wires run one way each.
+    expect(diagram.getAttribute('aria-label')).toMatch(/TXD to the module's RX/)
+    expect(diagram.getAttribute('aria-label')).toMatch(/OT1 back to the bridge's RXD/)
+    expect(diagram.getAttribute('aria-label')).toMatch(/3\.3 volts/)
   })
 
   it('warns that configuration needs a connection', async () => {
@@ -86,6 +103,45 @@ describe('App', () => {
     const alerts = await screen.findAllByRole('alert')
     expect(alerts.some((node) => /less than or equal/.test(node.textContent ?? ''))).toBe(true)
     expect(screen.getByRole('button', { name: 'Write to module' })).toBeDisabled()
+  }, 20_000)
+
+  it('guards the firmware write behind validation and an acknowledgement', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
+    await screen.findByText('v1.6.1')
+
+    await user.click(screen.getByRole('tab', { name: 'Firmware' }))
+    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument()
+
+    const write = screen.getByRole('button', { name: 'Write firmware to module' })
+    expect(write).toBeDisabled()
+
+    // An unaligned image is refused before anything irreversible can happen.
+    const picker = document.querySelector('input[type="file"]')
+    expect(picker).not.toBeNull()
+    await user.upload(picker as HTMLInputElement, bin('bad.bin', 13))
+    expect(await screen.findByText(/not a multiple of 4/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Write firmware to module' })).toBeDisabled()
+
+    // A valid image still needs the acknowledgement before the button unlocks.
+    await user.upload(picker as HTMLInputElement, bin('good.bin', 512))
+    await screen.findByText('512 bytes')
+    expect(screen.getByRole('button', { name: 'Write firmware to module' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /cannot be undone/i }))
+    expect(screen.getByRole('button', { name: 'Write firmware to module' })).toBeEnabled()
+  }, 20_000)
+
+  it('reads the firmware information from the module', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Simulated demo' }))
+    await screen.findByText('v1.6.1')
+
+    await user.click(screen.getByRole('tab', { name: 'Firmware' }))
+    await user.click(screen.getByRole('button', { name: 'Read firmware information' }))
+    expect(await screen.findByText('Running image')).toBeInTheDocument()
+    expect(screen.getAllByText('App 0').length).toBeGreaterThan(0)
   }, 20_000)
 
   it('exposes the serial trace', async () => {
