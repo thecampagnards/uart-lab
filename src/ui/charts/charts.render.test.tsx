@@ -39,6 +39,55 @@ function draw(element: ReactElement): SVGSVGElement {
   return svg
 }
 
+/**
+ * Absolute y of a text node, summing the translate of every ancestor group.
+ *
+ * Axis labels are placed by visx relative to nested transformed groups, so a
+ * label can sit outside the SVG box while its own `y` attribute looks harmless.
+ * That is how the gate axis label ended up with its descenders clipped.
+ */
+function absoluteY(node: SVGTextElement): number {
+  let y = Number(node.getAttribute('y') ?? 0)
+  let parent: Element | null = node.parentElement
+  while (parent && parent.tagName.toLowerCase() !== 'svg') {
+    const transform = parent.getAttribute('transform') ?? ''
+    const translate = /translate\(\s*(-?[\d.]+)\s*[, ]\s*(-?[\d.]+)\s*\)/.exec(transform)
+    if (translate) y += Number(translate[2])
+    parent = parent.parentElement
+  }
+  return y
+}
+
+/** Rough descender depth below the baseline, for a label's true bottom edge. */
+const DESCENDER = 3
+
+/**
+ * A rotated label is positioned in its own frame, so a plain y says nothing
+ * about where it lands. visx puts the rotation on the text element itself for an
+ * axis label, and on a wrapping group elsewhere, so both are checked.
+ */
+function isRotated(node: Element): boolean {
+  let current: Element | null = node
+  while (current && current.tagName.toLowerCase() !== 'svg') {
+    if ((current.getAttribute('transform') ?? '').includes('rotate')) return true
+    current = current.parentElement
+  }
+  return false
+}
+
+function labelsFitVertically(svg: SVGSVGElement): string[] {
+  const height = Number(svg.getAttribute('height'))
+  const offenders: string[] = []
+  for (const node of svg.querySelectorAll('text')) {
+    if (isRotated(node)) continue
+    const top = absoluteY(node)
+    if (top + DESCENDER > height || top < 0) {
+      offenders.push(`"${node.textContent ?? ''}" baseline at ${top.toFixed(0)} of ${height}`)
+    }
+  }
+  return offenders
+}
+
 function hasFiniteGeometry(svg: SVGSVGElement): boolean {
   const attributes = ['x', 'y', 'x1', 'x2', 'y1', 'y2', 'cx', 'cy', 'r', 'width', 'height', 'd']
   for (const node of svg.querySelectorAll('*')) {
@@ -84,6 +133,16 @@ describe('GateEnergyChart', () => {
     expect(hasFiniteGeometry(draw(chart(new Array<number>(TOTAL_GATES).fill(65535))))).toBe(true)
   })
 
+  it('leaves room for the axis label rather than clipping its descenders', () => {
+    const svg = draw(chart(new Array<number>(TOTAL_GATES).fill(500)))
+    expect(labelsFitVertically(svg)).toEqual([])
+    expect(
+      [...svg.querySelectorAll('text')].some((n) =>
+        /Gate \(0\.7 m each\)/.test(n.textContent ?? ''),
+      ),
+    ).toBe(true)
+  })
+
   it('describes itself and points at the table for the numbers', () => {
     const svg = draw(chart(new Array<number>(TOTAL_GATES).fill(500)))
     expect(svg.getAttribute('role')).toBe('img')
@@ -110,6 +169,12 @@ describe('DistanceTimeline', () => {
       /\d+\.\d{2} m/.test(node.textContent ?? ''),
     )
     expect(labels).toHaveLength(1)
+  })
+
+  it('keeps its own axis labels inside the box', () => {
+    expect(
+      labelsFitVertically(draw(<DistanceTimeline samples={samples} windowMs={60_000} />)),
+    ).toEqual([])
   })
 
   it('shows a waiting state rather than an empty box', () => {

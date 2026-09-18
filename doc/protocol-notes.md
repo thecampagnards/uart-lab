@@ -128,10 +128,13 @@ cannot help with that.
 
 - `0x01` / `0x02` (raw registers) — the meaning of the 256 registers is not
   established; exposing them would amount to offering to write at random.
-- `0x26` `set_baudrate` — implemented in the driver
-  (`Ld2420Driver.setBaudRate`) but not surfaced in the UI: if it goes wrong the
-  module answers at a different rate from the USB bridge, and the right one has
-  to be found by trial and error.
+- `0x26` `set_baudrate` / `0x27` `get_baudrate` — not implemented on the client
+  side. If a baud change goes wrong the module answers at a rate the bridge is
+  not using, and the only way back is guessing the right one; the reply is also
+  a bare ASCII line rather than a frame, so it cannot be correlated like every
+  other command. The simulator still models both, and the commands are in
+  `Cmd`, so adding it later is a small job — but shipping it unreachable and
+  untested would have been worse than not shipping it.
 
 ## Thresholds: linear vs dB
 

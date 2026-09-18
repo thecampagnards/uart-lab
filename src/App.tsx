@@ -9,11 +9,11 @@ import {
   Stack,
   Tabs,
   Text,
-  Tooltip,
+  useComputedColorScheme,
   useMantineColorScheme,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { DEVICES, LD2420, deviceCan, findDevice, type DeviceDescriptor } from './devices/registry'
+import { LD2420, deviceCan, findDevice, type DeviceDescriptor } from './devices/registry'
 import type { DeviceCapability } from './devices/types'
 import { OperatingMode, type OperatingModeValue } from './devices/ld2420/constants'
 import { useLd2420Session } from './hooks/useLd2420Session'
@@ -97,7 +97,7 @@ function Shell() {
             </Text>
           </Group>
           <Group ml="auto" gap="xs" wrap="nowrap">
-            <ColorSchemeToggle />
+            <ColorSchemeControl />
           </Group>
         </Group>
       </AppShell.Header>
@@ -293,21 +293,46 @@ function Shell() {
   )
 }
 
-function ColorSchemeToggle() {
+const SCHEME_OPTIONS = [
+  { value: 'auto', label: 'Follow the system', glyph: '◐' },
+  { value: 'light', label: 'Light', glyph: '☀' },
+  { value: 'dark', label: 'Dark', glyph: '☾' },
+] as const
+
+/**
+ * Three states, not two.
+ *
+ * The default is `auto`, which follows the operating system's or browser's own
+ * setting and tracks it live as that setting changes. A two-way toggle can only
+ * ever leave that state, never return to it, so all three are offered directly
+ * — one click each, and no popover to position.
+ */
+function ColorSchemeControl() {
   const { colorScheme, setColorScheme } = useMantineColorScheme()
-  const next = colorScheme === 'dark' ? 'light' : 'dark'
+  const computed = useComputedColorScheme('light', { getInitialValueInEffect: true })
+
   return (
-    <Tooltip label={`Switch to ${next} theme`}>
-      <ActionIcon
-        variant="default"
-        size="lg"
-        aria-label={`Switch to ${next} theme`}
-        onClick={() => setColorScheme(next)}
-      >
-        {colorScheme === 'dark' ? '☀' : '☾'}
-      </ActionIcon>
-    </Tooltip>
+    <ActionIcon.Group aria-label="Theme">
+      {SCHEME_OPTIONS.map((option) => {
+        const selected = colorScheme === option.value
+        // Under `auto` the glyph shows the scheme actually in force, which is
+        // not the same as the one selected.
+        const glyph =
+          option.value === 'auto' && selected ? (computed === 'dark' ? '☾' : '☀') : option.glyph
+        return (
+          <ActionIcon
+            key={option.value}
+            variant={selected ? 'filled' : 'default'}
+            size="lg"
+            aria-pressed={selected}
+            aria-label={option.label}
+            title={option.label}
+            onClick={() => setColorScheme(option.value)}
+          >
+            {glyph}
+          </ActionIcon>
+        )
+      })}
+    </ActionIcon.Group>
   )
 }
-
-export { DEVICES }

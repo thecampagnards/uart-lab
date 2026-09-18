@@ -122,6 +122,7 @@ describe('Ld2420Driver.uploadFirmware', () => {
     expect(info.active).toBe('App 0')
     expect(info.partition).toBe('App 0')
     expect(info.activeRaw).toBe(0x02)
+    expect(info.buildId).toBe('04PA')
   })
 
   it('transfers an image and the module ends up with exactly those bytes', async () => {

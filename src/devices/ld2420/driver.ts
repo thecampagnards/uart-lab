@@ -9,12 +9,9 @@ import { bytesToAscii, readU16le, readU32le, toHex } from '../../core/bytes'
 import { Emitter, type Transport, type Unsubscribe } from '../../core/transport'
 import {
   ActiveFirmware,
-  BAUD_RATES,
   Cmd,
-  DEFAULT_BAUD_RATE,
   MAX_CMD_FRAME_LENGTH,
   OperatingMode,
-  TOTAL_GATES,
   UpgradePartition,
   type OperatingModeValue,
 } from './constants'
@@ -30,7 +27,7 @@ import {
   MAX_PARAM_WRITES_PER_FRAME,
   cmdCloseCommandMode,
   cmdGetActiveFirmware,
-  cmdGetBaudRate,
+  cmdGetFirmwareId,
   cmdGetUpgradePartition,
   encodeCommand,
   cmdGetParameters,
@@ -38,16 +35,13 @@ import {
   cmdGetVersion,
   cmdOpenCommandMode,
   cmdReboot,
-  cmdSetBaudRate,
   cmdSetMode,
   cmdSetParameters,
   configAddresses,
   Ld2420FrameReader,
   type CommandResponse,
-  type ParamWrite,
 } from './frames'
 import {
-  cloneConfig,
   configFromValues,
   diffConfig,
   factoryConfig,
@@ -441,14 +435,6 @@ export class Ld2420Driver {
     return this.writeConfig(current, factoryConfig())
   }
 
-  writeSingleParameter(write: ParamWrite): Promise<void> {
-    return this.enqueue(() =>
-      this.inCommandModeDo(async () => {
-        await this.exchange(Cmd.SetParameter, cmdSetParameters([write]))
-      }),
-    )
-  }
-
   setMode(mode: OperatingModeValue): Promise<void> {
     return this.enqueue(() =>
       this.inCommandModeDo(async () => {
@@ -471,38 +457,6 @@ export class Ld2420Driver {
     })
   }
 
-  /**
-   * Change the module's bit rate and follow it on our side.
-   *
-   * The reply is a plain ASCII line, not a frame, so this waits a fixed settle
-   * time instead of matching a response. A reboot is required for the new rate
-   * to take effect, and the port is reopened at the new rate afterwards.
-   */
-  async setBaudRate(index: number): Promise<number> {
-    const rate = BAUD_RATES[index]
-    if (rate === undefined) throw new Error(`Unknown baud rate index: ${index}`)
-    await this.enqueue(async () => {
-      await this.inCommandModeDo(async () => {
-        await this.send(Cmd.SetBaudRate, cmdSetBaudRate(index))
-        await delay(200)
-      })
-      await this.send(Cmd.Reboot, cmdReboot())
-      this.commandMode_ = false
-      this.mode_ = OperatingMode.Simple
-    })
-    await delay(400)
-    this.reader.reset()
-    await this.transport.reopen(rate)
-    this.identity_ = { ...this.identity_, baudRateIndex: index }
-    this.identityChanges.emit(this.identity_)
-    return rate
-  }
-
-  /** Ask the module which rate it thinks it is using. Answer is an ASCII line. */
-  queryBaudRate(): Promise<void> {
-    return this.enqueue(() => this.send(Cmd.GetBaudRate, cmdGetBaudRate()))
-  }
-
   // -------------------------------------------------------------------------
   // Firmware upgrade
   // -------------------------------------------------------------------------
@@ -515,11 +469,24 @@ export class Ld2420Driver {
         const partition = await this.exchange(Cmd.GetUpgradePartition, cmdGetUpgradePartition())
         const activeRaw = active.data.length >= 4 ? readU32le(active.data, 0) : 0
         const partitionRaw = partition.data.length >= 4 ? readU32le(partition.data, 0) : 0
+
+        // Not every firmware answers 0x75, and it is only an identifier — a
+        // refusal should not cost the caller the rest of the reply.
+        let buildId: string | undefined
+        try {
+          const id = await this.exchange(Cmd.GetFirmwareId, cmdGetFirmwareId())
+          const text = bytesToAscii(id.data)
+          if (/^[\x20-\x7e]+$/.test(text)) buildId = text
+        } catch {
+          /* optional */
+        }
+
         return {
           activeRaw,
           active: ActiveFirmware[activeRaw] ?? `unknown (0x${activeRaw.toString(16)})`,
           partitionRaw,
           partition: UpgradePartition[partitionRaw] ?? `unknown (0x${partitionRaw.toString(16)})`,
+          ...(buildId === undefined ? {} : { buildId }),
         }
       }),
     )
@@ -578,9 +545,6 @@ export class Ld2420Driver {
   }
 }
 
-export const DEFAULT_BAUD = DEFAULT_BAUD_RATE
-export const GATE_COUNT = TOTAL_GATES
-
 function readLengthPrefixedString(response: CommandResponse): string {
   if (response.data.length < 2) return ''
   const length = readU16le(response.data, 0)
@@ -604,10 +568,6 @@ function now(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
 }
 
-export function cloneMeasurementConfig(config: Ld2420Config): Ld2420Config {
-  return cloneConfig(config)
-}
-
 // ---------------------------------------------------------------------------
 // Firmware upgrade
 // ---------------------------------------------------------------------------
@@ -629,4 +589,6 @@ export interface FirmwareInfo {
   /** Which partition a transfer would be written into. */
   partition: string
   partitionRaw: number
+  /** Four-character build identifier, e.g. `04PA`. Absent on firmwares that do not answer 0x75. */
+  buildId?: string
 }

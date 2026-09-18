@@ -3,27 +3,38 @@
 ## Layers
 
 ```
-  React UI (Mantine components, visx charts) ─────────────┐
-    src/App.tsx, src/ui/**                                │
-      ▲ session state, measurement snapshots              │
-      │                                                   │
-  Hooks ──────────────────────────────────────────────────┤
-    src/hooks/useLd2420Session.ts   the whole session     │
-    src/hooks/useLiveSnapshot.ts    10 Hz sampling        │
-      ▲                                                   │
-      │                                                   │
-  Driver ─────────────────────────────────────────────────┤  nothing
-    src/devices/ld2420/driver.ts                          │  below the
-      queueing, correlation, modes, trace                 │  UI touches
-      ▲                                                   │  the DOM
-      │                                                   │
-  Protocol (pure) ────────────────────────────────────────┤
-    src/devices/ld2420/frames.ts    encode/decode         │
-    src/devices/ld2420/config.ts    config model          │
-    src/devices/ld2420/constants.ts                       │
-      ▲                                                   │
-      │                                                   │
-  Transport ──────────────────────────────────────────────┘
+  React UI (Mantine components, visx charts) ──────────────┐
+    src/App.tsx, src/ui/**                                 │
+      ▲ session state, sampled snapshots                   │
+      │                                                    │
+  Hooks ───────────────────────────────────────────────────┤
+    useLd2420Session   the whole session                   │
+    useLiveSnapshot    10 Hz sampling of the measurements  │
+    useRawSnapshot     8 Hz sampling of the raw stream     │
+    useChartHeights    chart sizing from the viewport      │
+      ▲                                                    │
+      │                                                    │
+  Driver ──────────────────────────────────────────────────┤  nothing
+    src/devices/ld2420/driver.ts                           │  below the
+      queueing, correlation, modes, trace                  │  UI touches
+      ▲                                                    │  the DOM
+      │                                                    │
+  Device knowledge (pure) ─────────────────────────────────┤
+    src/devices/ld2420/frames.ts        encode/decode      │
+    src/devices/ld2420/config.ts        config model       │
+    src/devices/ld2420/calibration.ts   threshold maths    │
+    src/devices/ld2420/constants.ts                        │
+    src/devices/registry.ts             catalogue          │
+      ▲                                                    │
+      │                                                    │
+  Core (device-independent) ───────────────────────────────┤
+    src/core/bytes.ts      endian helpers                  │
+    src/core/firmware.ts   the transfer, given a descriptor│
+    src/core/history.ts    measurement ring buffer         │
+    src/core/rawLog.ts     the undecoded byte log          │
+      ▲                                                    │
+      │                                                    │
+  Transport ───────────────────────────────────────────────┘
     src/core/transport.ts    the interface
     src/core/webserial.ts    Web Serial (real hardware)
     src/devices/ld2420/simulator.ts   simulated module
@@ -117,11 +128,15 @@ range and never fired — and that is what the assistant reports.
 
 1. Create `src/devices/<id>/` with, at minimum, a frame codec, a driver and
    ideally a simulator.
-2. Add an entry to `src/devices/registry.ts`.
-3. Wire a configuration panel into `src/App.tsx`.
+2. Add an entry to `src/devices/registry.ts`, listing the `capabilities` it
+   supports and, if it can be flashed, its `FirmwareProtocol` descriptor.
+3. Add a panel per capability the shell does not already cover, and branch on
+   the capability in `src/App.tsx`.
 
 Nothing in the shell (header, sidebar, tabs, theme) depends on the LD2420; only
-the panels do.
+the panels do. A device that needs no driver at all is legitimate — **Any
+serial device** has none, and gets the serial monitor and the generic flasher
+from its capability list alone.
 
 ## Front-end stack
 

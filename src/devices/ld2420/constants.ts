@@ -51,7 +51,6 @@ export const Cmd = {
   SetUpgradeMode: 0x74,
   GetFirmwareId: 0x75,
 } as const
-export type CmdCode = (typeof Cmd)[keyof typeof Cmd]
 
 /** `set_mode` (0x12) payload values. */
 export const OperatingMode = {
@@ -149,13 +148,6 @@ export const UpgradePartition: Record<number, string> = {
   0x02: 'App 1',
 }
 
-/** `init_firmware_upgrade` (0x72) data status. Any other value is a buffer size. */
-export const INIT_ERRORS: Record<number, string> = {
-  0x01: 'Target partition unavailable.',
-  0x02: 'Image length rejected by the module.',
-  0x04: 'Flash erase failed.',
-}
-
 /** `send_firmware_block` (0x73) data status. A bit field, except 0x00 and 0x80. */
 export const BlockStatus = {
   Written: 0x00,
@@ -168,13 +160,3 @@ export const BlockStatus = {
   VerificationError: 0x40,
   Programmed: 0x80,
 } as const
-
-export const BLOCK_ERRORS: [number, string][] = [
-  [BlockStatus.CounterError, 'Block sequence number rejected.'],
-  [BlockStatus.FlashWriteError, 'Flash write error.'],
-  [BlockStatus.FlashReadError, 'Flash read aborted.'],
-  [BlockStatus.ChecksumError, 'Block checksum mismatch.'],
-  [BlockStatus.LengthError, 'Block length error.'],
-  [BlockStatus.AlignmentError, 'Data is not 4-byte aligned.'],
-  [BlockStatus.VerificationError, 'Image verification failed.'],
-]

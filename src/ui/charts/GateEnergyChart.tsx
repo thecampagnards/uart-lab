@@ -23,7 +23,12 @@ import { ChartLegend, TooltipRows } from './ChartChrome'
 const INITIAL_WIDTH = 640
 
 const DEFAULT_HEIGHT = 260
-const MARGIN = { top: 10, right: 12, bottom: 38, left: 42 }
+/**
+ * The bottom band holds the tick row and the axis label. visx puts the label 40px
+ * below the axis line, so anything under ~46 clips its descenders — and because
+ * the margin is fixed while the plot height is not, it clips at every size.
+ */
+const MARGIN = { top: 10, right: 12, bottom: 52, left: 42 }
 const MAX_DB = 50
 
 export interface GateEnergyChartProps {
@@ -181,7 +186,7 @@ function Plot({
             scale={x}
             stroke={CHROME.axis}
             hideTicks
-            label={`Gate (≈ ${GATE_SIZE_M} m per gate)`}
+            label={`Gate (${GATE_SIZE_M} m each)`}
             labelProps={{ ...axisLabelProps, textAnchor: 'middle' }}
             labelOffset={12}
             tickLabelProps={() => ({ ...tickLabelProps, textAnchor: 'middle', dy: 2 })}
