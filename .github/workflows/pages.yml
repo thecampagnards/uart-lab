@@ -26,7 +26,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # A workflow_run event carries the default branch's ref, so the commit
           # that actually passed has to be named explicitly.
